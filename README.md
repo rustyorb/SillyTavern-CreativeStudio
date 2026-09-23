@@ -40,7 +40,7 @@ No server plugin, build step or `npm install` is needed. The project uses Preact
 | **Playtest** | Sandbox runs built from project artifacts (card, lore activation, preset, prompt-stage regex) through any connection profile; AI-simulated user turns; scripted scenarios; inspect the exact prompt of each reply; capture the live ST chat with its active configuration and dry-run prompt; ratings, notes, side-by-side comparison. Every run records model, profile, preset (+hash), card hash, activated lore and regex |
 | **Inspector** | Pending proposals (per selection or all), provenance history, snapshots, live-SillyTavern backups with restore |
 
-Keyboard: `Alt+1…7` switch workshops, `Alt+I` toggles the inspector, `Ctrl+Z` / `Ctrl+Y` undo/redo (outside text
+Keyboard: `Ctrl+K` command palette (jump to any workshop or artifact, run actions), `Alt+1…7` switch workshops, `Alt+I` toggles the inspector, `Ctrl+Z` / `Ctrl+Y` undo/redo (outside text
 fields), `Ctrl+S` saves now, `Esc` closes.
 
 ## Where data lives

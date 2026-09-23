@@ -346,3 +346,8 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-entity-title { display: flex; flex-direction: column; gap: 0; }
 .cs-entity-title h3 { font-size: 1.35em; }
 .cs-byline { font-variant: small-caps; letter-spacing: .04em; color: var(--cs-dim); font-size: 0.88em; }
+
+/* --- Command palette --- */
+.cs-palette { width: min(640px, 100%); margin-top: -20vh; padding: 8px; gap: 6px; }
+.cs-palette-input { width: 100%; font-size: 1.05em; }
+.cs-palette .cs-list { max-height: 50vh; overflow: auto; }

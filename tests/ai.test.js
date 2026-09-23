@@ -126,3 +126,13 @@ test('request failures and cancellation surface as AiError', async () => {
     await assert.rejects(runStructured(mockCtx(), { system: 's', user: 'u', schema: SCHEMA, signal: ac.signal }), /Cancelled/);
     assert.equal(describeRoute(mockCtx(), 'missing').ok, false);
 });
+
+test('reasoning-only output produces actionable errors', async () => {
+    const { runChat } = await import('../src/ai/gateway.js');
+    const ctx = mockCtx({ responses: ['<think>I will think forever about this', '<think>still thinking'] });
+    await assert.rejects(runStructured(ctx, { system: 's', user: 'u', schema: SCHEMA }), /reasoning/);
+    const ctx2 = mockCtx({ responses: ['<think>only thoughts</think>   '] });
+    await assert.rejects(runChat(ctx2, { messages: [{ role: 'user', content: 'hi' }] }), /no reply text/);
+    const ctx3 = mockCtx({ responses: ['<think>plan</think>Hello there.'] });
+    assert.equal((await runChat(ctx3, { messages: [{ role: 'user', content: 'hi' }] })).text, 'Hello there.');
+});

@@ -117,7 +117,11 @@ export async function runChat(ctx, { messages, profileId = '', maxTokens = 400, 
         const abort = new Promise((_, rej) => signal?.addEventListener('abort', () => rej(new AiError('Cancelled', { meta: route })), { once: true }));
         text = String(await Promise.race([gen, abort]));
     }
-    return { text: String(text ?? '').replace(/<(think|thinking)>[\s\S]*?<\/\1>\s*/gi, '').trim(), meta: { ...route, durationMs: Date.now() - started } };
+    const clean = String(text ?? '').replace(/<(think|thinking)>[\s\S]*?<\/\1>\s*/gi, '').replace(/^<(think|thinking)>[\s\S]*$/i, '').trim();
+    if (!clean) {
+        throw new AiError('The model returned no reply text. Reasoning models can spend the whole response budget thinking: raise “Max reply tokens” or turn reasoning off for this connection.', { raw: String(text ?? ''), meta: route });
+    }
+    return { text: clean, meta: { ...route, durationMs: Date.now() - started } };
 }
 
 /**
@@ -207,6 +211,11 @@ export async function runStructured(ctx, req) {
     }
     meta.durationMs = Date.now() - started;
     meta.validationErrors = errors;
-    if (value === undefined) throw new AiError(`Could not read JSON from the model output (${errors[0]?.message ?? 'unknown error'})`, { raw, meta });
+    if (value === undefined) {
+        const onlyThinking = /^\s*<(think|thinking)>/i.test(String(raw)) && !String(raw).replace(/<(think|thinking)>[\s\S]*?(<\/\1>|$)/gi, '').trim();
+        throw new AiError(onlyThinking
+            ? 'The model used the whole response budget on reasoning and returned no JSON. Use a creation profile without reasoning, or a larger budget.'
+            : `Could not read JSON from the model output (${errors[0]?.message ?? 'unknown error'})`, { raw, meta });
+    }
     return { value, raw, meta };
 }

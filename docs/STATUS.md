@@ -66,5 +66,5 @@ Legend: ✅ implemented and verified (unit and/or live) · 🟡 implemented, par
 2. Claude Fable 5.1 native structured output in ST 1.19 may return `{}` (suspected ST client/server mismatch); the gateway already parses raw text, but this is unverified against the real API.
 3. Token totals in the assembled CC preview use an estimate; could batch ST's tokenizer.
 4. The activation simulator does not track sticky/cooldown state across turns; playtests could feed turn-by-turn state.
-5. No command palette (Ctrl+K) yet; keyboard navigation covers workshops, inspector, undo/redo, save and close.
+5. Keyboard: Ctrl+K palette, Alt+1…7, Alt+I, undo/redo, save, Esc; list navigation inside editors is mouse-first.
 6. i18n: UI strings are English only.

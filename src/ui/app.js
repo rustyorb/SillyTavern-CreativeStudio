@@ -3,7 +3,8 @@ import { render } from '../../vendor/preact-htm.mjs';
 import { html, useState, useEffect, useCallback, useMemo, Button, Icon, Badge, cx } from './kit.js';
 import { createStore, useStore } from './store.js';
 import { createProject } from '../core/project.js';
-import { Workspace } from './workspace.js';
+import { Workspace, AREA_FOR_TYPE } from './workspace.js';
+import { Palette } from './palette.js';
 
 let store = null;
 let studioEnv = null;
@@ -46,6 +47,7 @@ function Studio({ store, env, initialRoute, onClose }) {
     const [inspectorMode, setInspectorMode] = useState('auto');
     const [saveState, setSaveState] = useState(env.saveState());
     const [toast, setToast] = useState(null);
+    const [paletteOpen, setPaletteOpen] = useState(false);
 
     useEffect(() => env.onSaveState(setSaveState), [env]);
     useEffect(() => env.onToast(t => {
@@ -71,6 +73,9 @@ function Studio({ store, env, initialRoute, onClose }) {
             e.preventDefault();
             const l = store.redo();
             if (l) env.toast(`Redid: ${l}`);
+        } else if (mod && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            setPaletteOpen(true);
         } else if (mod && e.key.toLowerCase() === 's') {
             e.preventDefault();
             env.saveNow();
@@ -94,6 +99,7 @@ function Studio({ store, env, initialRoute, onClose }) {
                 </button>`)}
             </nav>
             <div class="cs-topbar-right">
+                <${Button} small icon="magnifying-glass" title="Command palette (Ctrl+K)" onClick=${() => setPaletteOpen(true)} />
                 <${Button} small icon="rotate-left" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
                 <${Button} small icon="rotate-right" title=${store.canRedo() ? `Redo: ${store.peekRedo()} (Ctrl+Y)` : 'Nothing to redo'} disabled=${!store.canRedo()} onClick=${() => store.redo()} />
                 <span class=${cx('cs-save', `cs-save-${saveState.status}`)} title=${saveState.detail ?? ''}>${saveState.label}</span>
@@ -104,6 +110,16 @@ function Studio({ store, env, initialRoute, onClose }) {
         <${Workspace} store=${store} env=${env} project=${project} area=${area} setArea=${setArea}
             selection=${selection} setSelection=${setSelection}
             inspector=${inspector} setInspector=${setInspector} inspectorOpen=${inspectorOpen} pending=${pending} openInspectorAt=${openInspectorAt} />
+        ${paletteOpen && html`<${Palette} project=${project} areas=${AREAS} onClose=${() => setPaletteOpen(false)} onPick=${async i => {
+            if (i.kind === 'area') { setSelection(null); setArea(i.id); }
+            else if (i.kind === 'artifact') { setSelection({ type: i.type, id: i.id }); setArea(AREA_FOR_TYPE[i.type] ?? area); }
+            else if (i.id === 'undo') store.undo();
+            else if (i.id === 'redo') store.redo();
+            else if (i.id === 'save') env.saveNow();
+            else if (i.id === 'snapshot') { await env.saveNow(); await env.storage.saveSnapshot(store.get(), `Snapshot ${new Date().toLocaleString()}`); env.toast('Snapshot saved', 'ok'); }
+            else if (i.id === 'proposals') openInspectorAt('proposals');
+            else if (i.id === 'inspector') setInspectorOpen(!inspectorOpen);
+        }} />`}
         ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
     </div>`;
 }
