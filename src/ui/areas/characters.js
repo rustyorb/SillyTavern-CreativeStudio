@@ -13,7 +13,7 @@ import {
 import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3, tidyExamples } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
 import { importCardFile, exportCard, EXPORT_KINDS } from '../../core/cardio.js';
-import { CARD_FIELDS, FIELD_LABELS } from '../../ai/tasks.js';
+import { CARD_FIELDS, FIELD_LABELS, tidyTags } from '../../ai/tasks.js';
 import { characterBookToWorld, worldToCharacterBook, normalizeWorld } from '../../core/lorebook.js';
 import { clone, uid } from '../../core/bytes.js';
 import { listStCharacters, exportStCharacterPng, importIntoSt, applyCardToSt, getStCharacter } from '../../st/live.js';
@@ -179,7 +179,7 @@ function Ideation({ store, env, project, select }) {
 
 function conceptToCharacter(c) {
     const card = emptyCardV3(c.name);
-    card.data.tags = c.tags ?? [];
+    card.data.tags = tidyTags(c.tags);
     const art = newCharacter(c.name, card);
     art.concept = c;
     return art;
@@ -317,7 +317,7 @@ function ConceptPanel({ store, env, project, ch }) {
         const specs = [];
         for (const [field, value] of Object.entries(r.value.fields ?? {})) {
             if (value == null || (Array.isArray(value) && !value.length) || value === '') continue;
-            specs.push({ task: 'character.expand', title: `Draft ${FIELD_LABELS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: field === 'mes_example' ? tidyExamples(value, ch.card.data.name) : value, rationale: r.value.rationale, generation: r.generation });
+            specs.push({ task: 'character.expand', title: `Draft ${FIELD_LABELS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: field === 'mes_example' ? tidyExamples(value, ch.card.data.name) : field === 'tags' ? tidyTags(value) : value, rationale: r.value.rationale, generation: r.generation });
         }
         const applied = pushProposals(store, specs, 'AI draft fields');
         env.toast(applied.length ? `Wrote ${applied.length} fields (undo with Ctrl+Z)` : `${specs.length} field drafts ready for review in the inspector`, 'ok');

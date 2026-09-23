@@ -72,13 +72,31 @@ export const FIELD_LABELS = { ...CARD_FIELDS, name: 'Name', tags: 'Tags', altern
 /** The fields a playable card needs; card drafting asks for all of them and generation repairs any left empty. */
 export const CORE_CARD_FIELDS = ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'tags'];
 
+/** Tags are for browsing: a handful of genre/theme words, not a keyword dump. */
+export const MAX_TAGS = 8;
+
+/** Clean AI tags: trimmed, deduplicated (case-insensitive), no meta tags about the format itself, at most MAX_TAGS. */
+export function tidyTags(tags) {
+    const meta = /^(sillytavern|character ?card|v[123]|chara_card_v\d|roleplay|rp|interactive fiction|ai)$/i;
+    const seen = new Set();
+    const out = [];
+    for (const t of tags ?? []) {
+        const s = String(t).trim();
+        if (!s || meta.test(s) || seen.has(s.toLowerCase())) continue;
+        seen.add(s.toLowerCase());
+        out.push(s);
+        if (out.length >= MAX_TAGS) break;
+    }
+    return out;
+}
+
 /** Card-field result schema with the wanted fields required (and non-empty). */
 function cardFieldsSchema(required) {
     const text = { type: 'string', minLength: 1 };
     const list = { type: 'array', items: { type: 'string' } };
     const all = {
         name: text, description: text, personality: text, scenario: text, first_mes: text, alternate_greetings: list,
-        mes_example: text, creator_notes: text, tags: { ...list, minItems: 1 }, system_prompt: text, post_history_instructions: text,
+        mes_example: text, creator_notes: text, tags: { ...list, minItems: 1, maxItems: MAX_TAGS }, system_prompt: text, post_history_instructions: text,
     };
     return {
         type: 'object', required: ['fields', 'rationale'],
@@ -156,7 +174,7 @@ export const TASKS = {
         build: ({ concept, card, style = '', only = null }) => {
             const want = only?.length ? only : CORE_CARD_FIELDS;
             return {
-                system: `${CRAFT}\nYou turn a concept into Character Card V3 field drafts. Description carries appearance, background, behaviour and speech patterns; scenario states the current situation; first_mes opens a scene with a hook and room for {{user}} to act (roughly 120-300 words); mes_example uses <START> blocks with {{char}}/{{user}} lines demonstrating voice. Keep permanent fields (description+personality+scenario) within about 1500 tokens.`,
+                system: `${CRAFT}\nYou turn a concept into Character Card V3 field drafts. Description carries appearance, background, behaviour and speech patterns; scenario states the current situation; first_mes opens a scene with a hook and room for {{user}} to act (roughly 120-300 words); mes_example uses <START> blocks with {{char}}/{{user}} lines demonstrating voice, each speaker on its own line; tags are 3-${MAX_TAGS} short genre/theme words. Keep permanent fields (description+personality+scenario) within about 1500 tokens.`,
                 user: `Concept:\n${typeof concept === 'string' ? concept : JSON.stringify(concept, null, 1)}\n${card ? `\nExisting card (keep what works, stay consistent with it):\n${cardDigest(card)}\n` : ''}${style ? `\nStyle requirements: ${style}\n` : ''}\n${only?.length ? `These fields are still EMPTY and must be written now: ${want.join(', ')}. Return exactly these fields, each non-empty.` : `Write every one of these fields, each non-empty: ${want.join(', ')}. You may add system_prompt or creator_notes if useful.`} Include a short rationale.`,
             };
         },
@@ -188,7 +206,13 @@ export const TASKS = {
         maxTokens: 4000,
         schema: {
             type: 'object', required: ['greetings'],
-            properties: { greetings: { type: 'array', minItems: 1, items: { type: 'object', required: ['text', 'situation'], properties: { situation: S, mood: S, text: S, group_only: { type: 'boolean' } } } } },
+            properties: { greetings: { type: 'array', minItems: 1, items: { type: 'object', required: ['text', 'situation'], properties: { situation: S, mood: S, text: { type: 'string', minLength: 1 }, group_only: { type: 'boolean' } } } } },
+        },
+        // Ask for as many as requested: the smallest valid answer would otherwise be a single greeting.
+        schemaFor: ({ count = 3 } = {}) => {
+            const s = structuredClone(TASKS['character.greetings'].schema);
+            s.properties.greetings.minItems = count;
+            return s;
         },
         build: ({ card, count = 3, direction = '' }) => ({
             system: `${CRAFT}\nYou write alternate greetings. Each must open a DIFFERENT situation (place, time, mood, or relationship state), end with an opening for {{user}}, and stay consistent with the card.`,

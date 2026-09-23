@@ -159,3 +159,8 @@ test('tidyExamples repairs the slips models make (real output from a DeepSeek ru
     assert.equal(tidyExamples(clean), clean);
     assert.equal(tidyExamples(''), '');
 });
+
+test('tidyExamples splits a speaker label glued onto the previous line (real DeepSeek output)', () => {
+    const raw = '<START>\n{{user}}: Who are you? Why are you helping me?{{char}}: *Static.* I am Nexus.';
+    assert.equal(tidyExamples(raw), '<START>\n{{user}}: Who are you? Why are you helping me?\n{{char}}: *Static.* I am Nexus.');
+});

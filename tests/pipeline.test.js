@@ -189,3 +189,17 @@ test('card drafting requires the fields it asks for (schema-constrained models r
     // tasks without a per-call schema keep their static one
     assert.equal(taskSchema(getTask('lore.structure'), {}), getTask('lore.structure').schema);
 });
+
+test('tags are tidied (no meta tags, no duplicates, at most 8) and greetings ask for the requested count', async () => {
+    const { tidyTags, MAX_TAGS, getTask, taskSchema } = await import('../src/ai/tasks.js');
+    const many = ['Cyberpunk', 'cyberpunk', ' AI ', 'Thriller', 'SillyTavern', 'Character Card', 'V3', 'Noir', 'Rain', 'Heist', 'Corporate', 'Hunted', 'Paranoia', 'Glitch', 'Extra'];
+    const t = tidyTags(many);
+    assert.equal(t.length, MAX_TAGS);
+    assert.deepEqual(t.slice(0, 3), ['Cyberpunk', 'Thriller', 'Noir']);
+    assert.ok(!t.some(x => /sillytavern|card|^v3$|^ai$/i.test(x)));
+    assert.equal(taskSchema(getTask('character.greetings'), { count: 3 }).properties.greetings.minItems, 3);
+    assert.equal(getTask('character.greetings').schema.properties.greetings.minItems, 1, 'static schema untouched');
+    const h = harness({ 'character.expand': { fields: { ...FAKE['character.expand'].fields, tags: many }, rationale: 'r' } });
+    await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card'] }) });
+    assert.equal(h.project.characters[0].card.data.tags.length, MAX_TAGS);
+});

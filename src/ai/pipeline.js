@@ -9,7 +9,7 @@ import { newEntry } from '../core/lorebook.js';
 import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
 import { defaultScript } from '../core/regex.js';
 import { newSet, addQr, QR_FLAGS } from '../core/qr.js';
-import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle, entryKeys } from './tasks.js';
+import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle, entryKeys, tidyTags } from './tasks.js';
 
 const STRING_FIELDS = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions'];
 /** Without these the card is not playable; the card step re-asks for any that come back empty. */
@@ -57,7 +57,7 @@ export const STEPS = [
         apply: (project, v, s) => {
             const c = v.candidates[0];
             const card = emptyCardV3(c.name);
-            card.data.tags = c.tags ?? [];
+            card.data.tags = tidyTags(c.tags);
             const isScenario = s.premise?.card_type === 'scenario';
             const art = newCharacter(c.name, card, { concept: c, kind: isScenario ? 'scenario' : 'character', origin: { kind: 'ai', run: s.runId } });
             const next = upsertArtifact(project, 'characters', art, { action: 'create', actor: 'ai', summary: `Generated character concept ${c.name}` });
@@ -84,7 +84,7 @@ export const STEPS = [
                 const value = k === 'mes_example' ? tidyExamples(f[k], f.name || d0.name) : f[k];
                 next = editArtifactField(next, 'characters', s.characterId, `card.data.${k}`, value, { actor: 'ai', summary: `Generated ${CARD_FIELDS[k] ?? k}` });
             }
-            if (Array.isArray(f.tags) && f.tags.length && empty('tags')) next = editArtifactField(next, 'characters', s.characterId, 'card.data.tags', f.tags, { actor: 'ai', summary: 'Generated tags' });
+            if (Array.isArray(f.tags) && f.tags.length && empty('tags')) next = editArtifactField(next, 'characters', s.characterId, 'card.data.tags', tidyTags(f.tags), { actor: 'ai', summary: 'Generated tags' });
             if (Array.isArray(f.alternate_greetings) && f.alternate_greetings.length && empty('alternate_greetings')) next = editArtifactField(next, 'characters', s.characterId, 'card.data.alternate_greetings', f.alternate_greetings.filter(x => typeof x === 'string' && x.trim()), { actor: 'ai', summary: 'Generated alternate greetings' });
             if (!char(next, s).card.data.creator) next = editArtifactField(next, 'characters', s.characterId, 'card.data.creator', 'Creative Studio', { actor: 'ai', summary: 'Creator' });
             return { project: next, state: s };
