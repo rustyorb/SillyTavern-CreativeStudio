@@ -1,6 +1,7 @@
 // Proposal review: original vs proposal, rationale, consequences, accept / revise / reject.
 import { html, useState, Button, Icon, Badge, SideBySide, cx } from './kit.js';
 import { acceptProposal, rejectProposal, isProposalStale, findArtifact, artifactName, addProposals, createProposal } from '../core/project.js';
+import { diffCc } from '../core/preset.js';
 
 export function ProposalCard({ store, project, proposal, compact }) {
     const [revising, setRevising] = useState(false);
@@ -35,7 +36,7 @@ export function ProposalCard({ store, project, proposal, compact }) {
         ${proposal.consequences?.length > 0 && html`<ul class="cs-small cs-muted">${proposal.consequences.map(c => html`<li>${c}</li>`)}</ul>`}
         ${!compact && (revising
             ? html`<textarea class="text_pole cs-textarea" rows="8" value=${draft} onInput=${e => setDraft(e.currentTarget.value)} aria-label="Revise proposal"></textarea>`
-            : html`<${SideBySide} before=${stale ? currentValue(target, proposal) : proposal.before ?? ''} after=${proposal.after} leftLabel=${stale ? 'Current (changed)' : 'Current'} />`)}
+            : html`<${ProposalBody} proposal=${proposal} before=${stale ? currentValue(target, proposal) : proposal.before} />`)}
         ${err && html`<div class="cs-err-text cs-small">${err}</div>`}
         <div class="cs-proposal-meta">${proposal.generation?.label ?? proposal.generation?.profileName ?? ''}${proposal.generation?.model ? ` · ${proposal.generation.model}` : ''} · ${new Date(proposal.created).toLocaleString()}</div>
         ${proposal.status === 'pending' && html`<div class="cs-row">
@@ -47,6 +48,51 @@ export function ProposalCard({ store, project, proposal, compact }) {
             <${Button} small icon="xmark" kind="danger" label="Reject" onClick=${reject} />
         </div>`}
     </article>`;
+}
+
+/** Type-aware rendering of what a proposal would change. */
+function ProposalBody({ proposal, before }) {
+    const after = proposal.after;
+    if (!proposal.target.id) {
+        if (proposal.target.type === 'characters') {
+            const c = after?.concept;
+            return html`<div class="cs-small">${c ? html`<strong>${c.name}</strong> — ${c.hook}<br /><span class="cs-muted">Voice: ${c.voice}</span>` : html`New character <strong>${after?.card?.data?.name}</strong>`}</div>`;
+        }
+        if (proposal.target.type === 'lorebooks') {
+            const entries = Object.values(after?.data?.entries ?? {});
+            return html`<div class="cs-small"><strong>${after?.name}</strong>: ${entries.length} entries<ul style="margin:2px 0 0 16px;padding:0">${entries.slice(0, 12).map(e => html`<li>${e.comment} <span class="cs-muted">(${(e.key ?? []).join(', ')})</span></li>`)}</ul></div>`;
+        }
+        return html`<pre class="cs-pre">${summarize(after)}</pre>`;
+    }
+    if (proposal.target.type === 'presets' && proposal.target.path === 'data' && Array.isArray(after?.prompts) && before) {
+        const d = diffCc(before, after);
+        return html`<div class="cs-small">
+            ${d.prompts.map(x => html`<div><${Badge} kind=${x.kind === 'added' ? 'ok' : x.kind === 'removed' ? 'err' : 'warn'}>${x.kind}</${Badge}> ${x.name ?? x.id}</div>`)}
+            ${d.orderChanged && html`<div class="cs-muted">Prompt order changed.</div>`}
+            ${d.settings.length > 0 && html`<div class="cs-muted">Settings: ${d.settings.map(s => s.path).join(', ')}</div>`}
+            <div class="cs-muted">Open the preset to review each prompt.</div>
+        </div>`;
+    }
+    if (Array.isArray(after) && after.every(x => typeof x === 'string') && (before === undefined || Array.isArray(before))) {
+        const prev = new Set(before ?? []);
+        const next = new Set(after);
+        const added = after.filter(x => !prev.has(x));
+        const removed = (before ?? []).filter(x => !next.has(x));
+        return html`<div class="cs-diff"><div class="cs-diff-body">
+            ${added.map(x => html`<div class="cs-seg-ins">+ ${x}</div>`)}
+            ${removed.map(x => html`<div class="cs-seg-del">− ${x}</div>`)}
+            ${!added.length && !removed.length && html`<div class="cs-muted">Order changes only.</div>`}
+        </div></div>`;
+    }
+    if (after && typeof after === 'object' && !Array.isArray(after) && 'content' in after && 'key' in after) {
+        return html`<div class="cs-small"><strong>${after.comment}</strong> <span class="cs-muted">keys: ${(after.key ?? []).join(', ')}</span><div style="white-space:pre-wrap">${after.content}</div></div>`;
+    }
+    return html`<${SideBySide} before=${before ?? ''} after=${after} leftLabel="Current" />`;
+}
+
+function summarize(v) {
+    const s = JSON.stringify(v, null, 1) ?? '';
+    return s.length > 1500 ? `${s.slice(0, 1500)}…` : s;
 }
 
 function currentValue(target, proposal) {

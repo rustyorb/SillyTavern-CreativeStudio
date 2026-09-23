@@ -1,0 +1,15 @@
+/* Example STscript (constructed). Block comments end with *| (not */) *|
+// line comments must end with a pipe |
+/let key=count 0 |
+/times 3 {:
+    /incvar hits |
+    /echo Pass {{timesIndex}} |
+:} |
+/setvar key=last as=number 42 |
+/if left={{getvar::last}} rule=gte right=40 else={: /echo small :} {:
+    /echo big: {{getvar::last}}
+:} |
+/let greet {: who= /echo Hello, {{var::who}}! :} |
+/:greet who=World |
+/run "Studio Tools.Roll" ||
+/echo done

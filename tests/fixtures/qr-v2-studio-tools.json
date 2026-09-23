@@ -1,0 +1,54 @@
+{
+    "version": 2,
+    "name": "Studio Tools",
+    "disableSend": false,
+    "placeBeforeInput": false,
+    "injectInput": false,
+    "color": "transparent",
+    "onlyBorderColor": false,
+    "qrList": [
+        {
+            "id": 2,
+            "showLabel": false,
+            "label": "Roll",
+            "title": "Roll a d20 and echo it",
+            "message": "/roll 1d20 | /echo Rolled {{pipe}}",
+            "contextList": [],
+            "preventAutoExecute": true,
+            "isHidden": false,
+            "executeOnStartup": false,
+            "executeOnUser": false,
+            "executeOnAi": false,
+            "executeOnChatChange": false,
+            "executeOnGroupMemberDraft": false,
+            "executeOnNewChat": false,
+            "executeBeforeGeneration": false,
+            "automationId": ""
+        },
+        {
+            "id": 4,
+            "icon": "fa-solid fa-book",
+            "showLabel": true,
+            "label": "Lore ping",
+            "title": "Auto-runs when a WI entry with automationId=lore-ping activates",
+            "message": "/setvar key=lastLore {{lastMessageId}} |\n/if left={{getvar::lastLore}} rule=gte right=10 {:\n    /echo Lore fired late in the chat\n:}",
+            "contextList": [
+                {
+                    "set": "Studio Tools",
+                    "isChained": false
+                }
+            ],
+            "preventAutoExecute": true,
+            "isHidden": true,
+            "executeOnStartup": false,
+            "executeOnUser": false,
+            "executeOnAi": false,
+            "executeOnChatChange": false,
+            "executeOnGroupMemberDraft": false,
+            "executeOnNewChat": false,
+            "executeBeforeGeneration": false,
+            "automationId": "lore-ping"
+        }
+    ],
+    "idIndex": 4
+}
