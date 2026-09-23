@@ -54,6 +54,9 @@ export function createStorage(transport) {
     }
 
     return {
+        /** The studio's copy of its own settings (see studio-settings.js). */
+        readSettingsBackup: () => readJson('cstudio-settings.json'),
+        writeSettingsBackup: value => writeJson('cstudio-settings.json', value),
         async listProjects() {
             const idx = await readIndex(true);
             return [...idx.projects].sort((a, b) => String(b.modified).localeCompare(String(a.modified)));

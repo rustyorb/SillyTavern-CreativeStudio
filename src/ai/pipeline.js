@@ -9,6 +9,7 @@ import { newEntry } from '../core/lorebook.js';
 import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
 import { defaultScript } from '../core/regex.js';
 import { newSet, addQr, QR_FLAGS } from '../core/qr.js';
+import { characterPrompt, characterNegative } from '../core/comfy.js';
 import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle, entryKeys, tidyTags } from './tasks.js';
 
 const STRING_FIELDS = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions'];
@@ -170,8 +171,30 @@ export const STEPS = [
     },
     {
         id: 'images', label: 'Image prompts', task: 'media.prompts', needs: ['card'],
-        build: (s, p, dials) => ({ card: char(p, s).card, style: dials.genre ? `${dials.genre}${dials.tone ? `, ${dials.tone}` : ''}` : '' }),
-        apply: (project, v, s) => ({ project: editArtifactField(project, 'characters', s.characterId, 'imagePrompts', v.prompts, { actor: 'ai', summary: 'Generated image prompts' }), state: s }),
+        build: (s, p, dials) => ({ card: char(p, s).card, style: dials.genre ? `${dials.genre}${dials.tone ? `, ${dials.tone}` : ''}` : '', promptStyle: s.promptStyle ?? 'tags' }),
+        apply: (project, v, s) => {
+            let next = editArtifactField(project, 'characters', s.characterId, 'imagePrompts', v.prompts, { actor: 'ai', summary: 'Generated image prompts' });
+            if (v.appearance) next = editArtifactField(next, 'characters', s.characterId, 'appearance', v.appearance, { actor: 'ai', summary: 'Generated appearance' });
+            next = editArtifactField(next, 'characters', s.characterId, 'imagePromptStyle', s.promptStyle ?? 'tags', { actor: 'ai', summary: 'Prompt style' });
+            return { project: next, state: s };
+        },
+    },
+    {
+        // Only part of a run when an image generator is set up (the generator adds it); paints the avatar.
+        id: 'art', label: 'Portrait', task: 'image.portrait', needs: ['images'], optional: true,
+        build: (s, p, dials) => {
+            const c = char(p, s);
+            const pr = (c.imagePrompts ?? []).find(x => /avatar|portrait/i.test(x.purpose)) ?? c.imagePrompts?.[0];
+            return { prompt: characterPrompt({ appearance: c.appearance, prompt: pr?.prompt ?? '', purpose: 'avatar' }), negative: characterNegative({ negative: pr?.negative ?? '', purpose: 'avatar' }), purpose: 'avatar', rating: dials.rating ?? '', name: `${c.card.data.name} — avatar` };
+        },
+        apply: (project, v, s) => {
+            let next = upsertArtifact(project, 'media', v.media, { action: 'create', actor: 'ai', summary: 'Painted portrait' });
+            const c = char(next, s);
+            next = editArtifactField(next, 'characters', s.characterId, 'links.media', [...(c.links?.media ?? []), v.media.id], { actor: 'ai', summary: 'Linked portrait' });
+            // An existing character keeps the avatar it has; the new portrait waits in its gallery.
+            if (!(s.fillOnly && c.avatarMediaId)) next = editArtifactField(next, 'characters', s.characterId, 'avatarMediaId', v.media.id, { actor: 'ai', summary: 'Painted portrait set as avatar' });
+            return { project: next, state: track(s, 'media', v.media.id) };
+        },
     },
     {
         id: 'polish', label: 'Self-critique & revise', task: 'character.critique', needs: ['card', 'greetings'],
@@ -204,7 +227,8 @@ export const STEPS = [
     },
 ];
 
-export const DEFAULT_STEPS = STEPS.map(s => s.id);
+/** Steps a run includes unless the caller opts in to more (optional steps need something set up first). */
+export const DEFAULT_STEPS = STEPS.filter(s => !s.optional).map(s => s.id);
 
 /** A new run record (stored in project.generationRuns so it survives reloads and can be retried or discarded). */
 export function newRun({ idea = '', dials = {}, steps = DEFAULT_STEPS } = {}) {

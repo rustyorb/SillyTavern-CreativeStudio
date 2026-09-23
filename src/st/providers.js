@@ -3,6 +3,7 @@
 // SillyTavern's status endpoint (the provider's /models), never typed in.
 
 import { stContext, stPost } from './env.js';
+import { scheduleSettingsBackup } from './studio-settings.js';
 
 /** @typedef {{id: string, name: string, source: string, secretKey: string, kind: 'cloud'|'local'|'custom', url?: string, keyUrl?: string, note?: string}} Provider */
 
@@ -85,6 +86,7 @@ function rememberStudioSecret(id) {
         const s = studioSettings(stContext());
         if (!s.secretIds.includes(id)) s.secretIds.push(id);
         stContext().saveSettingsDebounced();
+        scheduleSettingsBackup(stContext());
     } catch { /* no ST context (tests) */ }
 }
 
@@ -93,6 +95,7 @@ function forgetStudioSecret(id) {
         const s = studioSettings(stContext());
         s.secretIds = s.secretIds.filter(x => x !== id);
         stContext().saveSettingsDebounced();
+        scheduleSettingsBackup(stContext());
     } catch { /* no ST context */ }
 }
 
@@ -181,6 +184,7 @@ export function saveProfile(ctx, { id, name, provider, model, url = '', secretId
     const s = studioSettings(ctx);
     if (!s.profileIds.includes(profile.id)) s.profileIds.push(profile.id);
     ctx.saveSettingsDebounced();
+    scheduleSettingsBackup(ctx);
     return profile;
 }
 
@@ -197,6 +201,7 @@ export async function removeProfile(ctx, profileId, { deleteKey = false } = {}) 
     const s = studioSettings(ctx);
     s.profileIds = s.profileIds.filter(x => x !== profileId);
     ctx.saveSettingsDebounced();
+    scheduleSettingsBackup(ctx);
     if (disposable) {
         const provider = providerForProfile(profile);
         if (provider) await discardStoredKey(provider, profile['secret-id']);

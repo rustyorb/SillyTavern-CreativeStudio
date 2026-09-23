@@ -405,3 +405,15 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-provider-form select[size] { height: auto; }
 .cs-provider-form .cs-field-head > span { font-weight: 600; font-size: 0.9em; color: var(--cs-dim); }
 .cs-monogram { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 6px; display: grid; place-items: center; font-family: 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 1.25em; font-weight: 600; letter-spacing: .04em; color: var(--cs-accent); border: 1px solid color-mix(in srgb, var(--cs-accent) 55%, var(--cs-line)); background: color-mix(in srgb, var(--cs-accent) 8%, transparent); }
+.cs-studio .cs-test-image { max-width: 360px; max-height: 260px; border-radius: 6px; border: 1px solid var(--cs-line); object-fit: cover; }
+
+/* Images tab */
+.cs-gallery { display: flex; flex-wrap: wrap; gap: 10px; }
+.cs-gallery-item { margin: 0; width: 180px; display: flex; flex-direction: column; gap: 4px; }
+.cs-gallery-item img { width: 180px; height: 240px; object-fit: cover; border-radius: 6px; border: 1px solid var(--cs-line); display: block; }
+.cs-gallery-item figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; font-size: 0.85em; color: var(--cs-dim); }
+.cs-sprites { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.cs-sprite { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; border: 1px solid var(--cs-line); border-radius: 6px; padding: 4px;
+    background: repeating-conic-gradient(color-mix(in srgb, var(--cs-fg) 7%, transparent) 0 25%, transparent 0 50%) 0 0 / 14px 14px; }
+.cs-sprite img { width: 100%; height: 150px; object-fit: contain; display: block; }
+.cs-sprite figcaption { font-size: 0.82em; color: var(--cs-dim); }

@@ -438,10 +438,21 @@ export const TASKS = {
         area: 'characters',
         schemaName: 'image_prompts',
         maxTokens: 1500,
-        schema: { type: 'object', required: ['prompts'], properties: { prompts: { type: 'array', items: { type: 'object', required: ['purpose', 'prompt'], properties: { purpose: S, prompt: S, negative: S } } } } },
-        build: ({ card, style = '' }) => ({
-            system: 'You write concise image-generation prompts (comma-separated visual descriptors) consistent with a character card: portrait/avatar, full body, and a scene background. Visual facts only.',
-            user: `Card:\n${cardDigest(card)}\n${style ? `Style: ${style}\n` : ''}Return prompts for avatar, full body and background.`,
+        schema: {
+            type: 'object', required: ['appearance', 'prompts'],
+            properties: {
+                appearance: { type: 'string', minLength: 1 },
+                prompts: { type: 'array', minItems: 3, items: { type: 'object', required: ['purpose', 'prompt'], properties: { purpose: S, prompt: S, negative: S } } },
+            },
+        },
+        build: ({ card, style = '', promptStyle = 'tags' }) => ({
+            system: `You write image-generation prompts that match a character card. Visual facts only (no names, no story, no feelings the eye cannot see).
+${promptStyle === 'tags'
+        ? 'Write every prompt as comma-separated booru-style tags (e.g. "1girl, solo, long silver hair, amber eyes, leather armor, forest, dusk"). Use standard tags: start the appearance with the subject tags (1girl or 1boy, solo), and express age with tags the models know (young man, mature male, middle-aged, old man, mature female, old woman), never numbers like "late 40s". Do not add quality or score tags; they are added automatically.'
+        : 'Write every prompt as one or two plain descriptive sentences (subject, look, clothing, setting, light, camera). Do not add quality boilerplate; it is added automatically.'}
+"appearance" is the character's fixed look only (who they are, apparent age and build, hair, eyes, skin, distinctive features, usual outfit), with no pose, expression, background or lighting. It is put in front of the avatar and full-body prompts and reused for expression sprites, so it must describe the same person every time; the avatar and full-body prompts then only add framing, pose, setting and light.
+"negative" (optional) is a plain comma-separated list of things to keep out (e.g. "people, text"), never phrased as "no …".`,
+            user: `Card:\n${cardDigest(card)}\n${style ? `Visual style: ${style}\n` : ''}Return the appearance plus three prompts with purpose "avatar" (head and shoulders, facing the viewer), "full body", and "background" (the main scene without people).`,
         }),
     },
 

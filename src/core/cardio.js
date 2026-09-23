@@ -109,3 +109,27 @@ export const EXPORT_KINDS = [
     { id: 'json-v2', label: 'JSON (V2, lossy)', hint: 'For older tools; V3-only fields are dropped and reported.' },
     { id: 'json-st', label: 'JSON (SillyTavern shape)', hint: 'V2 JSON with V1 mirror fields, like ST JSON export.' },
 ];
+
+/**
+ * Add expression sprites to a card as V3 "emotion" assets for a CHARX export (SillyTavern's CHARX importer turns
+ * emotion assets into Character Expressions sprites). Existing emotion assets with the same name are replaced.
+ * @param {object} card V3 card
+ * @param {Record<string, Uint8Array>} sprites label → PNG bytes
+ * @returns {{ card: object, files: Record<string, Uint8Array> }}
+ */
+export function withSpriteAssets(card, sprites) {
+    const out = structuredClone(card);
+    const labels = Object.keys(sprites ?? {});
+    if (!labels.length) return { card: out, files: {} };
+    const names = new Set(labels);
+    const kept = (out.data.assets ?? []).filter(a => !(a.type === 'emotion' && names.has(a.name)));
+    const files = {};
+    const added = labels.map(label => {
+        const path = suggestedAssetPath('emotion', label, 'png');
+        files[path] = sprites[label];
+        return { type: 'emotion', uri: `embeded://${path}`, name: label, ext: 'png' };
+    });
+    if (!kept.some(a => a.type === 'icon')) kept.unshift({ type: 'icon', uri: 'ccdefault:', name: 'main', ext: 'png' });
+    out.data.assets = [...kept, ...added];
+    return { card: out, files };
+}

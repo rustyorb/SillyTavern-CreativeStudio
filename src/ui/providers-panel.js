@@ -2,6 +2,8 @@
 // Keys are stored by SillyTavern's secret store; the studio keeps only profile ids.
 import { html, useState, useEffect, useRef, Button, Icon, Badge, Section, Modal, cx } from './kit.js';
 import { stContext } from '../st/env.js';
+import { ImageSetup } from './image-setup.js';
+import { scheduleSettingsBackup } from '../st/studio-settings.js';
 import { describeRoute, listProfiles, runStructured } from '../ai/gateway.js';
 import {
     PROVIDERS, providerForProfile, connectionManagerAvailable, storeKey, storedKeys, listModels, saveProfile, removeProfile,
@@ -47,6 +49,7 @@ export function AiSetup({ store, env, project, onClose }) {
         ctx.extensionSettings.creativeStudio ??= {};
         ctx.extensionSettings.creativeStudio.defaultCreationProfileId = id;
         ctx.saveSettingsDebounced();
+        scheduleSettingsBackup(ctx);
     };
     const test = async id => {
         setTests(t => ({ ...t, [id]: { busy: true } }));
@@ -111,6 +114,8 @@ export function AiSetup({ store, env, project, onClose }) {
             ${adding && html`<${AddProvider} key=${adding.id} provider=${adding} ctx=${ctx} env=${env}
                 onSaved=${profile => { use(profile.id); setAdding(null); refresh(); test(profile.id); }} />`}
         </${Section}>`}
+
+        <${ImageSetup} env=${env} />
     </${Modal}>`;
 }
 

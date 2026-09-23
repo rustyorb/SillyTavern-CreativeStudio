@@ -6,12 +6,23 @@ import { DIALS, getTask, taskSchema } from '../ai/tasks.js';
 import { runStructured } from '../ai/gateway.js';
 import { stContext } from '../st/env.js';
 import { commandRegistry, describeCommand } from '../st/stscript-live.js';
+import { paint, imageSettings, imageReady, familyOf } from '../st/comfy.js';
+import { FAMILIES } from '../core/comfy.js';
+import { saveMedia } from './media.js';
 
 /** Controllers of runs in flight, so any mounted view (or none) can cancel them. */
 const running = new Map();
 
-export function makeRunTask(store, onStatus = () => {}) {
+export function makeRunTask(store, env, onStatus = () => {}) {
     return async (taskId, args, signal) => {
+        if (taskId === 'image.portrait') {
+            // Painting, not writing: the picture is saved as project media and handed to the step.
+            const t0 = Date.now();
+            const r = await paint({ prompt: args.prompt, negative: args.negative, purpose: args.purpose, rating: args.rating, signal });
+            const { media } = await saveMedia(env, store.get(), r.bytes, { name: args.name ?? 'portrait', role: 'generated' });
+            Object.assign(media, { prompt: r.positive, seed: r.seed, purpose: args.purpose });
+            return { value: { media }, generation: { task: taskId, label: 'ComfyUI', durationMs: Date.now() - t0 } };
+        }
         const task = getTask(taskId);
         const { system, user } = task.build(args);
         const profileId = store.get().settings?.creationProfileId ?? '';
@@ -41,8 +52,8 @@ export async function startGeneration(store, env, run) {
     try {
         await env.saveNow();
         await env.storage.saveSnapshot(store.get(), 'Before AI generation', 'auto').catch(() => {});
-        const runTask = makeRunTask(store);
-        const r = { ...run, state: { ...run.state, commandList: run.state.commandList ?? commandList() } };
+        const runTask = makeRunTask(store, env);
+        const r = { ...run, state: { ...run.state, commandList: run.state.commandList ?? commandList(), promptStyle: run.state.promptStyle ?? currentPromptStyle() } };
         return await runPipeline({
             getProject: () => store.get(),
             // Progress records are bookkeeping: saved, but not undo steps (undo reverts what was written, not the log).
@@ -54,6 +65,20 @@ export async function startGeneration(store, env, run) {
     } finally {
         running.delete(run.id);
     }
+}
+
+/** Image prompts are written as tags or sentences depending on the checkpoint the author paints with. */
+function currentPromptStyle() {
+    try { return FAMILIES[familyOf(imageSettings())]?.tags ? 'tags' : 'natural'; } catch { return 'tags'; }
+}
+
+function imagesOn() {
+    try { return imageReady(); } catch { return false; }
+}
+
+/** The steps a new run starts with: the defaults, plus the portrait when an image generator is set up. */
+export function startingSteps() {
+    return imagesOn() ? [...DEFAULT_STEPS, 'art'] : [...DEFAULT_STEPS];
 }
 
 /** Which generation steps an existing character still needs (so building "the rest" never duplicates artifacts). */
@@ -68,6 +93,7 @@ export function missingSteps(ch) {
     if (!d.extensions?.regex_scripts?.length) need.push('regex');
     if (!ch?.links?.qrSets?.length) need.push('qr');
     if (!ch?.imagePrompts?.length) need.push('images');
+    if (imagesOn() && !ch?.avatarMediaId) need.push('art');
     if (need.length) need.push('polish');
     return need;
 }
@@ -128,7 +154,7 @@ function Fuse({ run, stuck }) {
 export function Generator({ store, env, project, select }) {
     const [idea, setIdea] = useState('');
     const [dials, setDials] = useState(() => project.lastDials ?? {});
-    const [steps, setSteps] = useState(DEFAULT_STEPS);
+    const [steps, setSteps] = useState(startingSteps);
     const [showDials, setShowDials] = useState(false);
     const runs = (project.generationRuns ?? []).filter(r => r.status !== 'discarded');
     // The live run first; otherwise the latest (a run left "running" by a reload shows as interrupted only if it is the latest).
@@ -169,7 +195,7 @@ export function Generator({ store, env, project, select }) {
         ${showDials && html`<div class="cs-grid">
             ${Object.entries(DIALS).map(([k, d]) => html`<${Select} key=${k} label=${d.label} value=${dials[k] ?? ''} options=${d.options.map(o => ({ value: o, label: o || 'AI decides' }))} onChange=${v => setDials({ ...dials, [k]: v })} />`)}
         </div>
-        <div class="cs-row cs-small"><span class="cs-muted">Build:</span>${STEPS.map(s => html`<label key=${s.id} class="cs-toggle"><input type="checkbox" checked=${steps.includes(s.id)} disabled=${['premise', 'concept', 'card'].includes(s.id)}
+        <div class="cs-row cs-small"><span class="cs-muted">Build:</span>${STEPS.map(s => html`<label key=${s.id} class="cs-toggle"><input type="checkbox" checked=${steps.includes(s.id)} disabled=${['premise', 'concept', 'card'].includes(s.id) || (s.id === 'art' && !imagesOn())} title=${s.id === 'art' && !imagesOn() ? 'Set up images first (plug icon → Images)' : ''}
             onChange=${e => setSteps(e.currentTarget.checked ? [...steps, s.id] : steps.filter(x => x !== s.id))} /><span>${s.label}</span></label>`)}</div>`}
         ${active && html`<div class="cs-gen-run">
             <div class="cs-row-between">

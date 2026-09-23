@@ -28,6 +28,10 @@ export async function mountStudio(root, { route, onClose }) {
     if (!studioEnv) {
         const { createEnvironment } = await import('../st/env.js');
         studioEnv = await createEnvironment();
+        // Put back studio settings and profiles that a stale SillyTavern tab may have saved over.
+        const { attachSettingsBackup } = await import('../st/studio-settings.js');
+        const restored = await attachSettingsBackup(globalThis.SillyTavern.getContext(), studioEnv.storage).catch(() => []);
+        if (restored.length) setTimeout(() => studioEnv.toast(`Restored ${restored.join(', ')}: another SillyTavern tab had saved older settings over them.`, 'ok', 9000), 1200);
     }
     if (!store) {
         const last = await studioEnv.storage.loadLastProject().catch(() => null);

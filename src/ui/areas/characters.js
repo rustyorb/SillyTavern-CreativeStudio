@@ -1,8 +1,11 @@
 // Character & scenario workshop: ideation, V3 editing with AI proposals, compatibility, import/export, live ST.
 import {
-    html, useState, useMemo, useEffect, Button, Icon, Badge, Tabs, TextInput, TextArea, StringList, TagsInput, Field,
+    html, useState, useMemo, useEffect, useRef, Button, Icon, Badge, Tabs, TextInput, TextArea, StringList, TagsInput, Field,
     Section, Empty, Diagnostics, Modal, Toggle, NumberInput, Select, downloadBlob, pickFile, fileBytes, cx,
 } from '../kit.js';
+import { imageSettings, imageReady, familyOf, paint, paintSprites, installSprites } from '../../st/comfy.js';
+import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative } from '../../core/comfy.js';
+import { openAiSetup } from '../providers-panel.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
 import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
 import { startGeneration, developCharacter, isRunning } from '../generator.js';
@@ -12,7 +15,7 @@ import {
 } from '../../core/project.js';
 import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3, tidyExamples } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
-import { importCardFile, exportCard, EXPORT_KINDS } from '../../core/cardio.js';
+import { importCardFile, exportCard, EXPORT_KINDS, withSpriteAssets } from '../../core/cardio.js';
 import { CARD_FIELDS, FIELD_LABELS, tidyTags } from '../../ai/tasks.js';
 import { characterBookToWorld, worldToCharacterBook, normalizeWorld } from '../../core/lorebook.js';
 import { clone, uid } from '../../core/bytes.js';
@@ -221,6 +224,7 @@ const EDITOR_TABS = [
     { id: 'examples', label: 'Examples', icon: 'comments' },
     { id: 'prompts', label: 'Prompt overrides', icon: 'terminal' },
     { id: 'lore', label: 'Lore', icon: 'book' },
+    { id: 'images', label: 'Images', icon: 'image' },
     { id: 'meta', label: 'Metadata & assets', icon: 'tags' },
     { id: 'extensions', label: 'Extension data', icon: 'puzzle-piece' },
     { id: 'compat', label: 'Compatibility', icon: 'list-check' },
@@ -262,6 +266,7 @@ function CharacterEditor(props) {
             ${tab === 'examples' && html`<${ExamplesTab} ...${ep} />`}
             ${tab === 'prompts' && html`<${PromptsTab} ...${ep} />`}
             ${tab === 'lore' && html`<${LoreTab} ...${ep} />`}
+            ${tab === 'images' && html`<${ImagesTab} ...${ep} />`}
             ${tab === 'meta' && html`<${MetaTab} ...${ep} />`}
             ${tab === 'extensions' && html`<${ExtensionsTab} ...${ep} />`}
             ${tab === 'compat' && html`<${CompatTab} ...${ep} issues=${issues} />`}
@@ -537,59 +542,171 @@ function MetaTab({ store, env, project, ch, d, setData, setPath }) {
             <${Field} label="Modification date (V3)"><input type="datetime-local" class="text_pole cs-input" value=${fromUnix(d.modification_date)} onInput=${e => setData('modification_date', toUnix(e.currentTarget.value))} /></${Field}>
         </div>
         <${StringList} label="Source (V3)" items=${d.source ?? []} onChange=${v => setData('source', v.length ? v : undefined)} placeholder="https://…" hint="IDs or URLs where the card came from; append-only by convention. Not used by ST." />
-        <${ImagePrompts} store=${store} env=${env} project=${project} ch=${ch} />
         <${AssetsEditor} d=${d} setData=${setData} ch=${ch} project=${project} />
     `;
 }
 
-/** AI image prompts; optional generation through SillyTavern's Image Generation extension (/imagine). */
-function ImagePrompts({ store, env, project, ch }) {
+/**
+ * Pictures for a character: the AI writes the prompts (in the style the checkpoint wants), ComfyUI (or SillyTavern's
+ * Image Generation) paints them, and expression sprites share one face. Nothing here needs ComfyUI knowledge.
+ */
+function ImagesTab({ store, env, project, ch }) {
     const ai = useAiTask(store);
     const [style, setStyle] = useState('');
     const [busy, setBusy] = useState('');
+    const [spriteSet, setSpriteSet] = useState('core');
+    const [progress, setProgress] = useState(null);
+    const stop = useRef(null);
+    const d = ch.card.data;
+    let settings = null;
+    let ready = false;
+    try { settings = imageSettings(); ready = imageReady(); } catch { /* no ST context */ }
+    const comfy = settings?.backend === 'comfy';
+    const family = settings ? familyOf(settings) : 'realistic';
+    const promptStyle = FAMILIES[family]?.tags ? 'tags' : 'natural';
+    const rating = project.lastDials?.rating ?? '';
     const prompts = ch.imagePrompts ?? [];
-    let sdAvailable = false;
-    try { sdAvailable = !!globalThis.SillyTavern.getContext().SlashCommandParser.commands.imagine; } catch { /* ignore */ }
-    const media = project.media.filter(m => (ch.links?.media ?? []).includes(m.id) || m.id === ch.avatarMediaId);
-    const gen = async () => {
-        const r = await ai.run('media.prompts', { card: ch.card, style });
+    const sprites = ch.sprites ?? {};
+    const spriteIds = new Set(Object.values(sprites));
+    const gallery = project.media.filter(m => ((ch.links?.media ?? []).includes(m.id) || m.id === ch.avatarMediaId) && !spriteIds.has(m.id));
+    const look = ch.appearance || prompts.find(p => /avatar|portrait/i.test(p.purpose))?.prompt || '';
+    const stLinked = ch.origin?.kind === 'st' ? ch.origin.avatar : ch.stAvatar;
+
+    const writePrompts = async () => {
+        const r = await ai.run('media.prompts', { card: ch.card, style, promptStyle });
         if (!r) return;
-        store.update(p => editArtifactField(p, 'characters', ch.id, 'imagePrompts', r.value.prompts.map(x => ({ ...x, model: r.generation.label })), { actor: 'ai', summary: 'AI image prompts' }), 'image prompts');
+        store.update(p => {
+            let n = editArtifactField(p, 'characters', ch.id, 'imagePrompts', r.value.prompts.map(x => ({ ...x, model: r.generation.label })), { actor: 'ai', summary: 'AI image prompts' });
+            if (r.value.appearance) n = editArtifactField(n, 'characters', ch.id, 'appearance', r.value.appearance, { actor: 'ai', summary: 'AI appearance' });
+            return editArtifactField(n, 'characters', ch.id, 'imagePromptStyle', promptStyle, { actor: 'ai', summary: 'Prompt style' });
+        }, 'image prompts');
     };
-    const render = async (pr, i) => {
-        setBusy(String(i));
-        try {
-            const neg = pr.negative ? ` negative=${JSON.stringify(pr.negative)}` : '';
-            const res = await globalThis.SillyTavern.getContext().executeSlashCommandsWithOptions(`/imagine quiet=true${neg} ${JSON.stringify(pr.prompt)}`, { handleParserErrors: false, handleExecutionErrors: false, source: 'creative-studio' });
-            const url = String(res?.pipe ?? '').trim();
-            if (!url) throw new Error('Image Generation returned nothing (check its settings).');
-            const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
-            const { media: m, apply } = await saveMedia(env, store.get(), bytes, { name: `${ch.card.data.name} — ${pr.purpose}`, role: 'generated' });
-            m.prompt = pr.prompt;
-            m.sourceUrl = url;
-            store.update(p => editArtifactField(apply(p), 'characters', ch.id, 'links.media', [...(ch.links?.media ?? []), m.id], { summary: `Generated image (${pr.purpose})` }), 'generate image');
-        } catch (e) { env.toast(`Image generation failed: ${e.message}`, 'error', 7000); } finally { setBusy(''); }
+
+    /** Save a painted picture; the first portrait becomes the avatar if there is none yet. */
+    const keep = async (bytes, { purpose, prompt, seed }) => {
+        const { media: m, apply } = await saveMedia(env, store.get(), bytes, { name: `${d.name} — ${purpose}`, role: 'generated' });
+        Object.assign(m, { prompt, seed, purpose });
+        store.update(p => {
+            let n = apply(p);
+            const c = findArtifact(n, 'characters', ch.id);
+            n = editArtifactField(n, 'characters', ch.id, 'links.media', [...(c.links?.media ?? []), m.id], { actor: 'ai', summary: `Painted ${purpose}` });
+            if (/avatar|portrait/i.test(purpose) && !c.avatarMediaId) n = editArtifactField(n, 'characters', ch.id, 'avatarMediaId', m.id, { actor: 'ai', summary: 'Painted portrait set as avatar' });
+            return n;
+        }, 'paint image');
+        return m;
     };
-    return html`<${Section} title="Images" open=${prompts.length > 0 || media.length > 1}>
-        <div class="cs-row">
-            <input class="text_pole" style="flex:1" placeholder="Visual style (optional): e.g. painterly, muted palette" value=${style} onInput=${e => setStyle(e.currentTarget.value)} aria-label="Image style" />
-            <${Button} kind="ai" icon="wand-magic-sparkles" label="Write image prompts" onClick=${gen} disabled=${ai.busy} />
+
+    const paintOne = async pr => {
+        const current = store.get().characters.find(c => c.id === ch.id) ?? ch;
+        const r = await paint({ prompt: characterPrompt({ appearance: current.appearance, prompt: pr.prompt, purpose: pr.purpose }), negative: characterNegative(pr), purpose: pr.purpose, rating });
+        await keep(r.bytes, { purpose: pr.purpose, prompt: r.positive, seed: r.seed });
+    };
+    const run = async (key, fn) => {
+        setBusy(key);
+        try { await fn(); } catch (e) { env.toast(`Painting failed: ${e.message}`, 'error', 8000); } finally { setBusy(''); }
+    };
+    const paintAll = () => run('all', async () => { for (const pr of prompts) await paintOne(pr); });
+
+    const paintSpriteSet = labels => run('sprites', async () => {
+        if (!look) throw new Error('Write the image prompts first: sprites reuse the character\'s appearance.');
+        const ac = new AbortController();
+        stop.current = ac;
+        const seed = ch.spriteSeed ?? randomSeed();
+        const failed = [];
+        setProgress({ done: 0, total: labels.length, current: labels[0] });
+        store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSeed', seed, { actor: 'ai', summary: 'Sprite seed' }), 'sprite seed');
+        const res = await paintSprites({
+            look, labels, rating, seed, signal: ac.signal,
+            onEach: async (label, r) => {
+                if (r.bytes) {
+                    const { media: m, apply } = await saveMedia(env, store.get(), r.bytes, { name: `${d.name} — ${label}`, role: 'sprite' });
+                    m.label = label;
+                    store.update(p => {
+                        const n = apply(p);
+                        const c = findArtifact(n, 'characters', ch.id);
+                        return editArtifactField(n, 'characters', ch.id, 'sprites', { ...(c.sprites ?? {}), [label]: m.id }, { actor: 'ai', summary: `Painted ${label} sprite` });
+                    }, 'paint sprite');
+                } else failed.push(label);
+                setProgress(pg => ({ ...pg, done: pg.done + 1, current: labels[labels.indexOf(label) + 1] }));
+            },
+        });
+        setProgress(null);
+        env.toast(`${Object.keys(res.sprites).length} sprite(s) painted${res.transparent ? ' with transparent backgrounds' : ''}${failed.length ? `; failed: ${failed.join(', ')}` : ''}.`, failed.length ? 'error' : 'ok', 7000);
+    });
+    const newFace = async () => {
+        if (!(await env.confirm('Paint every sprite again with a new face?', 'The current sprites are replaced (Ctrl+Z brings them back).'))) return;
+        store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSeed', randomSeed(), { summary: 'New sprite seed' }), 'sprite seed');
+        paintSpriteSet(Object.keys(sprites).length ? Object.keys(sprites) : CORE_EXPRESSIONS);
+    };
+    const install = () => run('install', async () => {
+        const bytes = {};
+        for (const [label, id] of Object.entries(sprites)) {
+            const m = findArtifact(project, 'media', id);
+            if (m) bytes[label] = await mediaBytes(env, m);
+        }
+        const r = await installSprites(d.name, bytes);
+        const ok = r.filter(x => x.ok).length;
+        env.toast(`Installed ${ok} of ${r.length} sprite(s) for ${d.name}. Turn on Character Expressions in SillyTavern's extensions to see them.`, ok === r.length ? 'ok' : 'error', 8000);
+    });
+
+    const labels = spriteSet === 'all' ? Object.keys(EXPRESSIONS) : CORE_EXPRESSIONS;
+    return html`
+        <div class="cs-row cs-small">
+            ${ready ? html`<span class="cs-muted"><${Icon} name="image" /> Painting with ${comfy ? html`ComfyUI · <strong>${String(settings.ckpt).replace(/\.(safetensors|ckpt|gguf)$/i, '')}</strong> · ${FAMILIES[family]?.label ?? family}` : 'SillyTavern Image Generation'}</span>`
+                : html`<span class="cs-warn-text"><${Icon} name="triangle-exclamation" /> No image generator yet.</span>`}
+            <${Button} small icon="plug" label=${ready ? 'Change' : 'Set up images'} onClick=${openAiSetup} />
         </div>
-        <${AiStatus} ai=${ai} />
-        ${prompts.map((pr, i) => html`<div key=${i} class="cs-proposal">
-            <div class="cs-proposal-head"><strong>${pr.purpose}</strong>
-                <div class="cs-row">
-                    <${Button} small icon="copy" label="Copy" onClick=${() => navigator.clipboard?.writeText(pr.prompt)} />
-                    ${sdAvailable && html`<${Button} small icon="image" label=${busy === String(i) ? 'Generating…' : 'Generate in SillyTavern'} onClick=${() => render(pr, i)} disabled=${!!busy} title="Uses the Image Generation extension and its configured source" />`}
-                </div></div>
-            <div class="cs-small">${pr.prompt}</div>${pr.negative && html`<div class="cs-small cs-muted">Negative: ${pr.negative}</div>`}
-        </div>`)}
-        ${!sdAvailable && prompts.length > 0 && html`<div class="cs-muted cs-small">Enable and configure SillyTavern's Image Generation extension to render these here, or paste them into any image tool.</div>`}
-        ${media.length > 0 && html`<div class="cs-row">${media.map(m => html`<figure key=${m.id} style="margin:0;width:120px">
-            <img src=${m.url} alt=${m.name} title=${m.prompt ?? m.name} style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid var(--cs-line)" />
-            ${m.id !== ch.avatarMediaId ? html`<${Button} small label="Use as avatar" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'avatarMediaId', m.id, { summary: 'Set avatar image' }), 'set avatar')} />` : html`<${Badge} kind="ok">avatar</${Badge}>`}
-        </figure>`)}</div>`}
-    </${Section}>`;
+        <${Section} title="Prompts">
+            <div class="cs-row">
+                <input class="text_pole" style="flex:1" placeholder="Visual style (optional): e.g. painterly, muted palette, film photo" value=${style} onInput=${e => setStyle(e.currentTarget.value)} aria-label="Image style" />
+                <${Button} kind="ai" icon="wand-magic-sparkles" label=${prompts.length ? 'Rewrite prompts' : 'Write image prompts'} onClick=${writePrompts} disabled=${ai.busy} />
+                ${ready && prompts.length > 0 && html`<${Button} kind="primary" icon="image" label=${busy === 'all' ? 'Painting…' : 'Paint all'} onClick=${paintAll} disabled=${!!busy} />`}
+            </div>
+            <${AiStatus} ai=${ai} />
+            ${ch.imagePromptStyle && ch.imagePromptStyle !== promptStyle && html`<div class="cs-warn-text cs-small">These prompts were written as ${ch.imagePromptStyle === 'tags' ? 'tags' : 'sentences'}; the current checkpoint prefers ${promptStyle === 'tags' ? 'tags' : 'sentences'}. Rewrite them for best results.</div>`}
+            ${(ch.appearance || prompts.length > 0) && html`<${TextArea} label="Appearance (reused for every sprite)" value=${ch.appearance ?? ''} rows=${2} stats=${false}
+                onChange=${v => store.update(p => editArtifactField(p, 'characters', ch.id, 'appearance', v, { summary: 'Edited appearance' }), 'appearance')} />`}
+            ${prompts.map((pr, i) => html`<div key=${i} class="cs-proposal">
+                <div class="cs-proposal-head"><strong>${pr.purpose}</strong>
+                    <div class="cs-row">
+                        <${Button} small icon="copy" title="Copy prompt" onClick=${() => navigator.clipboard?.writeText(pr.prompt)} />
+                        ${ready && html`<${Button} small icon="image" label=${busy === `p${i}` ? 'Painting…' : 'Paint'} onClick=${() => run(`p${i}`, () => paintOne(pr))} disabled=${!!busy} />`}
+                    </div></div>
+                <div class="cs-small">${pr.prompt}</div>${pr.negative && html`<div class="cs-small cs-muted">Negative: ${pr.negative}</div>`}
+            </div>`)}
+        </${Section}>
+        ${gallery.length > 0 && html`<${Section} title=${`Pictures (${gallery.length})`}>
+            <div class="cs-gallery">${gallery.map(m => html`<figure key=${m.id} class="cs-gallery-item">
+                <a href=${m.url} target="_blank" rel="noopener"><img src=${m.url} alt=${m.name} title=${m.prompt ?? m.name} loading="lazy" /></a>
+                <figcaption>${m.purpose ?? ''}
+                    ${m.id !== ch.avatarMediaId ? html`<${Button} small label="Use as avatar" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'avatarMediaId', m.id, { summary: 'Set avatar image' }), 'set avatar')} />` : html`<${Badge} kind="ok">avatar</${Badge}>`}
+                </figcaption>
+            </figure>`)}</div>
+        </${Section}>`}
+        <${Section} title=${`Expression sprites (${Object.keys(sprites).length})`} open=${Object.keys(sprites).length > 0 || comfy}>
+            <div class="cs-muted cs-small">One face, many moods, for SillyTavern's Character Expressions. Every sprite starts from the same portrait, so hair, face and outfit stay the same.${comfy ? '' : ' Needs ComfyUI (AI for creation → Images).'}</div>
+            <div class="cs-row">
+                <select class="text_pole cs-input" style="width:auto" value=${spriteSet} onChange=${e => setSpriteSet(e.currentTarget.value)} aria-label="Which expressions">
+                    <option value="core" selected=${spriteSet === 'core'}>8 core expressions</option>
+                    <option value="all" selected=${spriteSet === 'all'}>All 28 SillyTavern expressions</option>
+                </select>
+                <${Button} kind="ai" icon="face-smile" label=${busy === 'sprites' ? 'Painting…' : Object.keys(sprites).length ? 'Paint missing' : 'Paint sprites'}
+                    onClick=${() => paintSpriteSet(labels.filter(l => !sprites[l]).length ? labels.filter(l => !sprites[l]) : labels)} disabled=${!!busy || !comfy} />
+                ${busy === 'sprites' && html`<${Button} small icon="stop" label="Stop" onClick=${() => stop.current?.abort()} />`}
+                ${Object.keys(sprites).length > 0 && !busy && html`<${Button} small icon="rotate" label="New face" onClick=${newFace} disabled=${!comfy} />`}
+                ${Object.keys(sprites).length > 0 && html`<${Button} small icon="upload" label=${busy === 'install' ? 'Installing…' : 'Install in SillyTavern'} onClick=${install} disabled=${!!busy}
+                    title=${stLinked ? `Upload to characters/${d.name}/ (Character Expressions)` : 'Uploads to characters/<name>/ in SillyTavern; create the character there too (Export & SillyTavern tab)'} />`}
+            </div>
+            ${progress && html`<div class="cs-fuse-wrap">
+                <div class="cs-fuse">${Array.from({ length: progress.total }, (_, i) => html`<span key=${i} class=${cx('cs-fuse-seg', i < progress.done ? 'is-done' : i === progress.done ? 'is-running' : '')}></span>`)}</div>
+                <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. The first one also paints the base portrait.</div>
+            </div>`}
+            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites">${Object.keys(EXPRESSIONS).filter(l => sprites[l]).map(l => {
+                const m = findArtifact(project, 'media', sprites[l]);
+                return m && html`<figure key=${l} class="cs-sprite"><img src=${m.url} alt=${l} loading="lazy" /><figcaption>${l}</figcaption></figure>`;
+            })}</div>
+            <div class="cs-muted cs-small">Sprites also travel inside CHARX exports as emotion assets; SillyTavern turns them back into sprites on import.</div>`}
+        </${Section}>`;
 }
 
 function AssetsEditor({ d, setData, ch, project }) {
@@ -674,7 +791,20 @@ function PublishTab({ store, env, project, ch, d }) {
     const doExport = async kind => {
         setBusy(kind);
         try {
-            const r = exportCard(kind, { card: ch.card, topLevelExtras: ch.topLevelExtras, image: await cardImage(), assetFiles: kind === 'charx' ? await assetFiles() : {} });
+            let card = ch.card;
+            let files = kind === 'charx' ? await assetFiles() : {};
+            if (kind === 'charx' && Object.keys(ch.sprites ?? {}).length) {
+                // Expression sprites ride along as emotion assets; SillyTavern's CHARX import makes them sprites again.
+                const bytes = {};
+                for (const [label, id] of Object.entries(ch.sprites)) {
+                    const m = findArtifact(project, 'media', id);
+                    if (m) bytes[label] = await toPngBytes(await mediaBytes(env, m));
+                }
+                const withSprites = withSpriteAssets(card, bytes);
+                card = withSprites.card;
+                files = { ...files, ...withSprites.files };
+            }
+            const r = exportCard(kind, { card, topLevelExtras: ch.topLevelExtras, image: await cardImage(), assetFiles: files });
             downloadBlob(r.bytes, `${safeName(d.name)}.${r.ext}`, r.mime);
             setLastNotes(r.notes);
             store.update(p => logHistory(p, { target: { type: 'characters', id: ch.id }, action: 'export', summary: `Exported ${kind}` }), 'export');
