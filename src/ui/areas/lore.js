@@ -379,6 +379,8 @@ function ActivationPreview({ project, lb, env }) {
                 ${project.lorebooks.filter(b => b.id !== lb.id).map(b => html`<${Toggle} key=${b.id} label=${b.name} checked=${otherBooks.includes(b.id)} onChange=${v => setOtherBooks(v ? [...otherBooks, b.id] : otherBooks.filter(x => x !== b.id))} />`)}
             </${Section}>`}
             <div class="cs-small">Budget: <strong>${result.usedTokens}</strong> / ${result.budget} tokens ${result.overflowed ? html`<${Badge} kind="err">overflowed</${Badge}>` : ''} · ${result.log.length} scan pass(es): ${result.log.map(l => `${l.state}@depth ${l.depth}: +${l.activated}`).join(' → ')}</div>
+            <${ActivationChain} result=${result} multi=${books.length > 1} />
+            <${Section} title="Every entry, with reasons" open=${false}>
             <table class="cs-table"><thead><tr><th>Entry</th><th>Result</th><th>Why</th></tr></thead><tbody>
                 ${result.results.sort((a, b) => (a.status === 'activated' ? -1 : 0) - (b.status === 'activated' ? -1 : 0)).map(r => html`<tr key=${`${r.entry.world}.${r.entry.uid}`} class=${r.status === 'activated' ? 'cs-hit' : 'cs-miss'}>
                     <td>${r.entry.comment || `#${r.entry.uid}`}${books.length > 1 ? html`<div class="cs-muted cs-small">${r.entry.world}</div>` : ''}</td>
@@ -386,6 +388,7 @@ function ActivationPreview({ project, lb, env }) {
                     <td class="cs-small">${r.reason}</td>
                 </tr>`)}
             </tbody></table>
+            </${Section}>
             <div class="cs-muted cs-small">Probability rolls are assumed to succeed and inclusion-group ties use a fixed roll so the preview is stable. Timed effects (sticky/cooldown) need real chat state and are not simulated beyond “delay”.</div>
         </div>
         <div class="cs-stack">
@@ -395,6 +398,40 @@ function ActivationPreview({ project, lb, env }) {
                 <div class="cs-pblock-body">${b.items.map(a => a.content).join('\n')}</div>
             </div>`) : html`<${Empty} icon="bolt" title="Nothing activates">Try adding a key word to the test chat.</${Empty}>`}
         </div>
+    </div>`;
+}
+
+/** Chain reaction: one lane per scan pass; each lit entry shows the key that sparked it. */
+function ActivationChain({ result, multi }) {
+    const lit = result.results.filter(r => r.status === 'activated');
+    const passes = [...new Set(lit.map(r => r.pass))].sort((a, b) => a - b);
+    const cold = result.results.filter(r => r.status !== 'activated' && r.status !== 'skipped');
+    const spark = r => {
+        if (/^Constant/.test(r.reason)) return html`<span class="cs-chain-spark">always on</span>`;
+        if (/^Decorator/.test(r.reason)) return html`<span class="cs-chain-spark">@@activate</span>`;
+        return (r.matched ?? []).slice(0, 3).map(k => html`<span class="cs-chain-spark">“${k}”</span>`);
+    };
+    if (!lit.length && !cold.length) return null;
+    return html`<div class="cs-chain" role="list" aria-label="Activation chain">
+        ${passes.map((p, i) => {
+            const state = result.log[p - 1]?.state ?? '';
+            return html`<div class="cs-chain-lane" role="listitem" key=${p}>
+                <div class="cs-chain-lane-head">Pass ${p} · ${state === 'initial' ? 'chat' : state === 'recursion' ? 'recursion' : state}</div>
+                ${lit.filter(r => r.pass === p).map(r => html`<div class="cs-chain-node" key=${`${r.entry.world}.${r.entry.uid}`} title=${r.reason}>
+                    <span class="cs-chain-name">${r.entry.comment || `#${r.entry.uid}`}</span>${multi ? html`<span class="cs-muted cs-small"> · ${r.entry.world}</span>` : ''}
+                    <div class="cs-chain-sparks">${spark(r)}${state === 'recursion' ? html`<span class="cs-muted"> from pass ${p - 1} text</span>` : ''}</div>
+                </div>`)}
+                ${i < passes.length - 1 && html`<div class="cs-chain-arrow" aria-hidden="true">→</div>`}
+            </div>`;
+        })}
+        ${cold.length > 0 && html`<div class="cs-chain-lane cs-chain-cold" role="listitem">
+            <div class="cs-chain-lane-head">Did not fire</div>
+            ${cold.slice(0, 12).map(r => html`<div class="cs-chain-node" key=${`${r.entry.world}.${r.entry.uid}`} title=${r.reason}>
+                <span class="cs-chain-name">${r.entry.comment || `#${r.entry.uid}`}</span>
+                <div class="cs-small cs-muted">${r.status === 'miss' ? 'no key in scan window' : r.reason.slice(0, 60)}</div>
+            </div>`)}
+            ${cold.length > 12 && html`<div class="cs-muted cs-small">+${cold.length - 12} more</div>`}
+        </div>`}
     </div>`;
 }
 

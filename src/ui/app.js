@@ -42,7 +42,8 @@ function Studio({ store, env, initialRoute, onClose }) {
     const [area, setArea] = useState(AREAS.some(a => a.id === initialRoute) ? initialRoute : 'project');
     const [selection, setSelection] = useState(null); // { type, id }
     const [inspector, setInspector] = useState('proposals');
-    const [inspectorOpen, setInspectorOpen] = useState(true);
+    // 'auto' = open only while proposals are pending (an empty rail wastes a quarter of the screen).
+    const [inspectorMode, setInspectorMode] = useState('auto');
     const [saveState, setSaveState] = useState(env.saveState());
     const [toast, setToast] = useState(null);
 
@@ -54,6 +55,9 @@ function Studio({ store, env, initialRoute, onClose }) {
     }), [env]);
 
     const pending = project.proposals.filter(p => p.status === 'pending').length;
+    const inspectorOpen = inspectorMode === 'open' || (inspectorMode === 'auto' && pending > 0);
+    const setInspectorOpen = v => setInspectorMode((typeof v === 'function' ? v(inspectorOpen) : v) ? 'open' : 'closed');
+    const openInspectorAt = tab => { setInspector(tab); setInspectorMode('open'); };
 
     const onKey = useCallback(e => {
         const mod = e.ctrlKey || e.metaKey;
@@ -93,13 +97,13 @@ function Studio({ store, env, initialRoute, onClose }) {
                 <${Button} small icon="rotate-left" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
                 <${Button} small icon="rotate-right" title=${store.canRedo() ? `Redo: ${store.peekRedo()} (Ctrl+Y)` : 'Nothing to redo'} disabled=${!store.canRedo()} onClick=${() => store.redo()} />
                 <span class=${cx('cs-save', `cs-save-${saveState.status}`)} title=${saveState.detail ?? ''}>${saveState.label}</span>
-                <${Button} small icon=${inspectorOpen ? 'table-columns' : 'table-columns'} title="Toggle inspector (Alt+I)" ariaPressed=${inspectorOpen} onClick=${() => setInspectorOpen(!inspectorOpen)} />
+                <${Button} small icon=${inspectorOpen ? 'table-columns' : 'table-columns'} title=${`Inspector (Alt+I) — ${inspectorMode === 'auto' ? 'opens automatically when AI proposals are pending' : inspectorMode}`} ariaPressed=${inspectorOpen} onClick=${() => setInspectorOpen(!inspectorOpen)} />
                 <${Button} small icon="xmark" title="Close (Esc)" onClick=${onClose} />
             </div>
         </header>
         <${Workspace} store=${store} env=${env} project=${project} area=${area} setArea=${setArea}
             selection=${selection} setSelection=${setSelection}
-            inspector=${inspector} setInspector=${setInspector} inspectorOpen=${inspectorOpen} pending=${pending} />
+            inspector=${inspector} setInspector=${setInspector} inspectorOpen=${inspectorOpen} pending=${pending} openInspectorAt=${openInspectorAt} />
         ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
     </div>`;
 }

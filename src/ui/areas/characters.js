@@ -233,9 +233,10 @@ function CharacterEditor(props) {
         props.setSelection(null);
     };
     const ep = { ...props, setData, setPath, d };
-    return html`<div class="cs-area-head">
-            ${avatar && html`<img src=${avatar.url} alt="" width="34" height="34" style="border-radius:6px;object-fit:cover" />`}
-            <h3>${d.name || '(unnamed)'} ${ch.kind === 'scenario' && html`<${Badge}>scenario</${Badge}>`}</h3>
+    const byline = [ch.kind === 'scenario' ? 'Scenario' : 'Character', d.character_version && `v${d.character_version}`, d.creator && `by ${d.creator}`, d.nickname && `“${d.nickname}”`].filter(Boolean).join(' · ');
+    return html`<div class="cs-area-head cs-entity-head" style=${avatar ? `background-image:url("${avatar.url}")` : ''}>
+            ${avatar && html`<img src=${avatar.url} alt="" width="46" height="46" style="border-radius:6px;object-fit:cover;border:1px solid var(--cs-line)" />`}
+            <div class="cs-entity-title"><h3>${d.name || '(unnamed)'}</h3><span class="cs-byline">${byline}</span></div>
             ${ch.origin?.kind === 'st' && html`<${Badge} kind="accent" title="Linked to a SillyTavern character">ST: ${ch.origin.avatar}</${Badge}>`}
             ${pendingCount > 0 && html`<${Badge} kind="accent">${pendingCount} pending</${Badge}>`}
             <div class="cs-spacer"></div>

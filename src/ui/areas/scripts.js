@@ -167,6 +167,21 @@ function QrEditor({ store, env, project, set, qr, setData, setQrId }) {
         <div class="cs-grid">
             <${TextInput} label="Label" value=${qr.label} onChange=${v => setQr({ label: v })} />
             <${TextInput} label="Tooltip" value=${qr.title} onChange=${v => setQr({ title: v })} />
+        </div>
+        <div class="cs-row">
+            <${Button} small label="Source" ariaPressed=${view === 'source'} onClick=${() => setView('source')} />
+            <${Button} small label="Readable outline" ariaPressed=${view === 'outline'} onClick=${() => setView('outline')} />
+            <div class="cs-spacer" style="flex:1"></div>
+            ${live.available && html`<${Badge} kind=${live.ok ? 'ok' : 'err'} title="Checked with SillyTavern's own parser">${live.ok ? 'parses in ST' : 'syntax error'}</${Badge}>`}
+            <${Button} small icon="play" label="Test run…" onClick=${() => setRunState({ phase: 'review' })} disabled=${!qr.message.trim()} />
+            <${Button} small icon="download" title="Export this Quick Reply" onClick=${exportQr} />
+            <${Button} small icon="trash" kind="danger" title="Delete" onClick=${deleteQr} />
+        </div>
+        ${view === 'source'
+            ? html`<textarea class="text_pole cs-textarea cs-code" rows="14" value=${qr.message} onInput=${e => setQr({ message: e.currentTarget.value })} aria-label="Quick Reply message / STscript" spellcheck="false"></textarea>`
+            : html`<${Outline} analysis=${analysis} />`}
+        <${Section} title="Button behaviour" open=${false} right=${html`<span class="cs-muted cs-small">${[qr.isHidden && 'hidden', ...QR_FLAGS.filter(([k]) => qr[k]).map(([, l]) => l.toLowerCase()), qr.automationId && `automation ${qr.automationId}`, (qr.contextList ?? []).length && `${qr.contextList.length} context set(s)`].filter(Boolean).join(' · ') || 'manual button'}</span>`}>
+            <div class="cs-grid">
             <${TextInput} label="Icon (Font Awesome class)" value=${qr.icon ?? ''} onChange=${v => setQr({ icon: v || undefined })} placeholder="fa-solid fa-dice" />
             <${TextInput} label="Automation ID" value=${qr.automationId ?? ''} onChange=${v => setQr({ automationId: v })} hint="Runs when a World Info entry with the same ID activates." />
         </div>
@@ -182,18 +197,7 @@ function QrEditor({ store, env, project, set, qr, setData, setQrId }) {
                     <option value="">+ set…</option>${store.get().qrSets.map(s => html`<option value=${s.data.name}>${s.data.name}</option>`)}
                 </select></div>
         </${Field}>
-        <div class="cs-row">
-            <${Button} small label="Source" ariaPressed=${view === 'source'} onClick=${() => setView('source')} />
-            <${Button} small label="Readable outline" ariaPressed=${view === 'outline'} onClick=${() => setView('outline')} />
-            <div class="cs-spacer" style="flex:1"></div>
-            ${live.available && html`<${Badge} kind=${live.ok ? 'ok' : 'err'} title="Checked with SillyTavern's own parser">${live.ok ? 'parses in ST' : 'syntax error'}</${Badge}>`}
-            <${Button} small icon="play" label="Test run…" onClick=${() => setRunState({ phase: 'review' })} disabled=${!qr.message.trim()} />
-            <${Button} small icon="download" title="Export this Quick Reply" onClick=${exportQr} />
-            <${Button} small icon="trash" kind="danger" title="Delete" onClick=${deleteQr} />
-        </div>
-        ${view === 'source'
-            ? html`<textarea class="text_pole cs-textarea cs-code" rows="14" value=${qr.message} onInput=${e => setQr({ message: e.currentTarget.value })} aria-label="Quick Reply message / STscript" spellcheck="false"></textarea>`
-            : html`<${Outline} analysis=${analysis} />`}
+        </${Section}>
         <div class="cs-split">
             <div class="cs-stack">
                 <h4 style="margin:0">Diagnostics</h4>

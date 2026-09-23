@@ -84,7 +84,11 @@ export function Workspace(props) {
             ${area === 'scripts' && html`<${ScriptsArea} ...${areaProps} />`}
             ${area === 'playtest' && html`<${PlaytestArea} ...${areaProps} />`}
         </main>
-        ${inspectorOpen && html`<${Inspector} ...${areaProps} />`}
+        ${inspectorOpen ? html`<${Inspector} ...${areaProps} />` : html`<nav class="cs-rail" aria-label="Inspector">
+            <button class="cs-rail-btn" title="AI proposals" onClick=${() => props.openInspectorAt('proposals')}><${Icon} name="wand-magic-sparkles" />${props.pending > 0 && html`<${Badge} kind="accent">${props.pending}</${Badge}>`}</button>
+            <button class="cs-rail-btn" title="History" onClick=${() => props.openInspectorAt('history')}><${Icon} name="clock-rotate-left" /></button>
+            <button class="cs-rail-btn" title="Snapshots & live backups" onClick=${() => props.openInspectorAt('snapshots')}><${Icon} name="camera" /></button>
+        </nav>`}
     </div>`;
 }
 
