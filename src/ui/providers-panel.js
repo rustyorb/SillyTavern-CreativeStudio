@@ -1,11 +1,11 @@
 // "AI for creation": pick which model writes for you, or add a provider (cloud key or local server).
 // Keys are stored by SillyTavern's secret store; the studio keeps only profile ids.
 import { html, useState, useEffect, useRef, Button, Icon, Badge, Section, Modal, cx } from './kit.js';
-import { stContext, stPost } from '../st/env.js';
+import { stContext } from '../st/env.js';
 import { describeRoute, listProfiles, runStructured } from '../ai/gateway.js';
 import {
     PROVIDERS, providerForProfile, connectionManagerAvailable, storeKey, storedKeys, listModels, saveProfile, removeProfile,
-    studioProfiles, profileName,
+    studioProfiles, profileName, keyIsDisposable, discardStoredKey,
 } from '../st/providers.js';
 
 /** Open the panel from anywhere (e.g. the "Creation model" menu). */
@@ -58,7 +58,8 @@ export function AiSetup({ store, env, project, onClose }) {
         }
     };
     const remove = async p => {
-        const deleteKey = p['secret-id'] ? await env.confirm(`Also delete the API key stored for “${p.name}”?`, 'Choose No to keep the key in SillyTavern (you can reuse it later).') : false;
+        // Only a key the studio added (and nothing else uses) can go with the profile; the user's own keys are never offered.
+        const deleteKey = (await keyIsDisposable(ctx, p)) ? await env.confirm(`Also delete the API key the studio stored for “${p.name}”?`, 'Choose No to keep the key in SillyTavern (you can reuse it later).') : false;
         await removeProfile(ctx, p.id, { deleteKey });
         if (current === p.id) use('');
         refresh();
@@ -132,6 +133,7 @@ function AddProvider({ provider, ctx, env, onSaved }) {
     const [busy, setBusy] = useState('');
     const [err, setErr] = useState('');
     const pending = useRef(''); // mirrors pendingId for the unmount cleanup
+    const mounted = useRef(true);
 
     useEffect(() => {
         storedKeys(provider).then(list => {
@@ -141,14 +143,28 @@ function AddProvider({ provider, ctx, env, onSaved }) {
     }, [provider.id]);
     // A key typed here and then abandoned is removed again, so nothing is left behind in SillyTavern.
     useEffect(() => () => {
-        if (pending.current) stPost('/api/secrets/delete', { key: provider.secretKey, id: pending.current }, { raw: true }).catch(() => {});
+        mounted.current = false;
+        if (pending.current) discardStoredKey(provider, pending.current);
     }, []);
+
+    /** Editing the key (or switching away from "new") retires a key stored for the previous text. */
+    const dropPending = () => {
+        if (!pending.current) return;
+        discardStoredKey(provider, pending.current);
+        pending.current = '';
+        setPendingId('');
+    };
 
     const secretIdFor = async () => {
         if (keyChoice !== 'new') return keyChoice;
         if (!key.trim()) return cloud ? null : '';
         if (pendingId) return pendingId;
         const id = await storeKey(provider, key, `Creative Studio · ${provider.name}`);
+        if (!mounted.current) {
+            // The panel closed while the key was being stored.
+            await discardStoredKey(provider, id);
+            throw new Error('Closed');
+        }
         pending.current = id;
         setPendingId(id);
         return id;
@@ -185,13 +201,13 @@ function AddProvider({ provider, ctx, env, onSaved }) {
             <input class="text_pole cs-input cs-mono" value=${url} placeholder="http://127.0.0.1:1234/v1" onInput=${e => { setUrl(e.currentTarget.value); setModels(null); }} /></label>`}
         ${(cloud || existing.length > 0) && html`<div class="cs-stack">
             ${existing.length > 0 && html`<label class="cs-field"><span class="cs-field-head"><span>API key</span></span>
-                <select class="text_pole cs-input" value=${keyChoice} onChange=${e => { setKeyChoice(e.currentTarget.value); setModels(null); }}>
+                <select class="text_pole cs-input" value=${keyChoice} onChange=${e => { dropPending(); setKeyChoice(e.currentTarget.value); setModels(null); }}>
                     ${existing.map(k => html`<option value=${k.id} selected=${k.id === keyChoice}>Use a stored key: ${k.label}${k.active ? ' (active in SillyTavern)' : ''}</option>`)}
                     <option value="new" selected=${keyChoice === 'new'}>Add a new key…</option>
                 </select></label>`}
             ${keyChoice === 'new' && html`<label class="cs-field"><span class="cs-field-head"><span>${existing.length ? 'New API key' : cloud ? 'API key' : 'API key (only if your server needs one)'}</span></span>
                 <input type="password" autocomplete="off" class="text_pole cs-input cs-mono" value=${key} placeholder=${cloud ? 'Paste your key' : 'optional'}
-                    onInput=${e => { setKey(e.currentTarget.value); setModels(null); }} /></label>`}
+                    onInput=${e => { dropPending(); setKey(e.currentTarget.value); setModels(null); }} /></label>`}
         </div>`}
         <div class="cs-muted cs-small"><${Icon} name="lock" /> Keys are saved in SillyTavern's own secret store, not in extension settings. Your chat connection keeps its current key.</div>
         <div class="cs-row">

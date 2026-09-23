@@ -279,7 +279,8 @@ export function analyze(text, { knownCommands = null } = {}) {
     }
     // A Quick Reply whose message does not start with "/" is sent as a user message (QuickReplySet.executeWithOptions),
     // so stray text only matters inside a slash-command script.
-    if (/^\s*\//.test(String(text ?? ''))) for (const pt of s.plainText) lints.push({ level: 'warn', message: `Text outside any command is discarded by ST: “${pt.text}”`, line: pt.line });
+    if (/^\//.test(String(text ?? ''))) for (const pt of s.plainText) lints.push({ level: 'warn', message: `Text outside any command is discarded by ST: “${pt.text}”`, line: pt.line });
+    else if (/^\s+\//.test(String(text ?? ''))) lints.push({ level: 'warn', message: 'The message starts with a space or line break before "/", so SillyTavern sends it to the chat as text instead of running it. Remove the leading whitespace.', line: 1 });
     else if (/(^|\s)\/[a-z][\w-]*(\s|\||$)/im.test(String(text ?? ''))) lints.push({ level: 'warn', message: 'The message starts with plain text, so SillyTavern sends all of it to the chat and none of its /commands run. Start it with a /command to make it a script.', line: 1 });
     for (const v of vars.readLocal) if (v && v !== '?' && !vars.writeLocal.has(v)) lints.push({ level: 'info', message: `Reads chat variable "${v}" that this script never sets (it may come from elsewhere).`, line: null });
     return {
@@ -290,7 +291,8 @@ export function analyze(text, { knownCommands = null } = {}) {
         calls,
         macros: s.macros,
         lints,
-        isScript: /^\s*\//.test(String(text ?? '')),
+        // SillyTavern runs a Quick Reply as commands only when its very first character is "/" (input[0] == '/').
+        isScript: /^\//.test(String(text ?? '')),
     };
 }
 

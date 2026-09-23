@@ -25,6 +25,11 @@ export class AiError extends Error {
 /** Default time limit for one model call. Providers occasionally accept a request and never answer. */
 export const DEFAULT_TIMEOUT_MS = 240000;
 
+/** The limit grows with the answer length so slow local models (about 10 tokens/s) can finish long answers. */
+export function timeoutFor(maxTokens = 2048) {
+    return Math.max(DEFAULT_TIMEOUT_MS, Math.round(maxTokens * 100));
+}
+
 /** Describe the route that would be used, for the UI. */
 export function describeRoute(ctx, profileId) {
     if (profileId) {
@@ -145,7 +150,8 @@ export async function runChat(ctx, { messages, profileId = '', maxTokens = 400, 
  * @returns {Promise<{ value: any, raw: string, meta: object }>}
  */
 export async function runStructured(ctx, req) {
-    const { schema, schemaName = 'result', profileId = '', maxTokens = 2048, signal, onStatus = () => {}, repair = true, timeoutMs = DEFAULT_TIMEOUT_MS } = req;
+    const { schema, schemaName = 'result', profileId = '', maxTokens = 2048, signal, onStatus = () => {}, repair = true } = req;
+    const timeoutMs = req.timeoutMs ?? timeoutFor(maxTokens);
     const route = describeRoute(ctx, profileId);
     if (!route.ok && route.mode === 'profile') throw new AiError(route.label, { meta: route });
     const messages = buildMessages(req);
@@ -220,8 +226,15 @@ export async function runStructured(ctx, req) {
             { role: 'assistant', content: String(raw).slice(0, 12000) },
             { role: 'user', content: `That response is not valid for the required JSON Schema. Problems:\n${errors.slice(0, 12).map(e => `- ${e.path}: ${e.message}`).join('\n')}\nReturn the corrected JSON only.` },
         ];
-        const raw2 = await callOnce(fixMsgs);
-        const p2 = extractJson(raw2);
+        let raw2 = null;
+        try {
+            raw2 = await callOnce(fixMsgs);
+        } catch (e) {
+            // A failed repair must not throw away a usable first answer (it may only break a soft rule).
+            if (signal?.aborted || value === undefined) throw e;
+            meta.repairError = e?.message ?? String(e);
+        }
+        const p2 = raw2 === null ? { ok: false } : extractJson(raw2);
         if (p2.ok) {
             const v2 = coerce(schema, p2.value);
             const e2 = validate(schema, v2);

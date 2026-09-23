@@ -31,7 +31,7 @@ export async function mountStudio(root, { route, onClose }) {
     }
     if (!store) {
         const last = await studioEnv.storage.loadLastProject().catch(() => null);
-        store = createStore(last ?? withDefaultCreationModel(createProject('My first project')));
+        store = createStore(last ?? withDefaultCreationModel(createProject('My first project')), { sticky: ['generationRuns'] });
         studioEnv.attachStore(store);
     }
     render(html`<${Studio} store=${store} env=${studioEnv} initialRoute=${route} onClose=${onClose} />`, root);

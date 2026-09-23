@@ -90,3 +90,11 @@ test('plain-text Quick Reply messages are user messages, not discarded text; str
     const script = analyze('/echo hi |\nstray words\n/trigger');
     assert.ok(script.lints.some(l => /discarded/.test(l.message)));
 });
+
+test('a Quick Reply is a script only when its very first character is "/" (QuickReplySet.executeWithOptions)', () => {
+    const lead = analyze('\n/echo hi');
+    assert.equal(lead.isScript, false);
+    assert.ok(lead.lints.some(l => /leading whitespace/.test(l.message)));
+    assert.equal(analyze(' /roll 1d20').isScript, false);
+    assert.equal(analyze('/roll 1d20').isScript, true);
+});

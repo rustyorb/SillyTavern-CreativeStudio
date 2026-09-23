@@ -61,9 +61,60 @@ export async function storeKey(provider, value, label) {
     const previous = Array.isArray(before) ? before.find(s => s.active) : null;
     const { id } = await stPost('/api/secrets/write', { key, value: String(value).trim(), label });
     if (!id) throw new Error('SillyTavern did not store the key.');
-    if (previous?.id) await stPost('/api/secrets/rotate', { key, id: previous.id }, { raw: true });
+    rememberStudioSecret(id);
+    if (previous?.id) {
+        // Put SillyTavern's own key back in charge; if that cannot be done, take the new key out again.
+        let restored = false;
+        for (let attempt = 0; attempt < 2 && !restored; attempt++) {
+            try { restored = (await stPost('/api/secrets/rotate', { key, id: previous.id }, { raw: true })).ok; } catch { restored = false; }
+        }
+        if (!restored) {
+            await stPost('/api/secrets/delete', { key, id }, { raw: true }).catch(() => {});
+            forgetStudioSecret(id);
+            await refreshStSecrets();
+            throw new Error('SillyTavern stored the key but could not switch back to your current key, so the new key was removed again. Nothing changed; please try once more.');
+        }
+    }
     await refreshStSecrets();
     return id;
+}
+
+/** Secret ids this studio created (ids are not secrets). Only these are ever offered for deletion. */
+function rememberStudioSecret(id) {
+    try {
+        const s = studioSettings(stContext());
+        if (!s.secretIds.includes(id)) s.secretIds.push(id);
+        stContext().saveSettingsDebounced();
+    } catch { /* no ST context (tests) */ }
+}
+
+function forgetStudioSecret(id) {
+    try {
+        const s = studioSettings(stContext());
+        s.secretIds = s.secretIds.filter(x => x !== id);
+        stContext().saveSettingsDebounced();
+    } catch { /* no ST context */ }
+}
+
+/** Delete a key the studio stored but never saved into a profile (typed and then abandoned or corrected). */
+export async function discardStoredKey(provider, id) {
+    if (!id) return;
+    await stPost('/api/secrets/delete', { key: provider.secretKey, id }, { raw: true }).catch(() => {});
+    forgetStudioSecret(id);
+    await refreshStSecrets();
+}
+
+/**
+ * May the key behind a studio profile be deleted together with it? Only if the studio created it, no other
+ * profile uses it, and it is not the key SillyTavern itself is currently using.
+ */
+export async function keyIsDisposable(ctx, profile) {
+    const id = profile?.['secret-id'];
+    if (!id || !studioSettings(ctx).secretIds.includes(id)) return false;
+    if ((ctx.extensionSettings.connectionManager?.profiles ?? []).some(p => p.id !== profile.id && p['secret-id'] === id)) return false;
+    const provider = providerForProfile(profile);
+    const list = provider ? (await secretState())[provider.secretKey] : null;
+    return !(Array.isArray(list) && list.some(s => s.id === id && s.active));
 }
 
 /** Keys already stored for a provider (so a key added in SillyTavern can be reused without retyping). */
@@ -100,6 +151,7 @@ export async function listModels(provider, { secretId = '', url = '' } = {}) {
 function studioSettings(ctx) {
     ctx.extensionSettings.creativeStudio ??= {};
     ctx.extensionSettings.creativeStudio.profileIds ??= [];
+    ctx.extensionSettings.creativeStudio.secretIds ??= [];
     return ctx.extensionSettings.creativeStudio;
 }
 
@@ -132,22 +184,24 @@ export function saveProfile(ctx, { id, name, provider, model, url = '', secretId
     return profile;
 }
 
-/** Remove a studio-created profile; optionally delete its key from SillyTavern's secret store too. */
+/**
+ * Remove a studio-created profile; optionally delete its key too, but only when keyIsDisposable says so
+ * (never a key the user added in SillyTavern, one another profile uses, or the active one).
+ */
 export async function removeProfile(ctx, profileId, { deleteKey = false } = {}) {
     const cm = ctx.extensionSettings.connectionManager;
     const profile = cm.profiles.find(p => p.id === profileId);
+    const disposable = deleteKey && profile ? await keyIsDisposable(ctx, profile) : false;
     cm.profiles = cm.profiles.filter(p => p.id !== profileId);
     if (cm.selectedProfile === profileId) cm.selectedProfile = null;
     const s = studioSettings(ctx);
     s.profileIds = s.profileIds.filter(x => x !== profileId);
     ctx.saveSettingsDebounced();
-    if (deleteKey && profile?.['secret-id']) {
+    if (disposable) {
         const provider = providerForProfile(profile);
-        if (provider) {
-            await stPost('/api/secrets/delete', { key: provider.secretKey, id: profile['secret-id'] }, { raw: true });
-            await refreshStSecrets();
-        }
+        if (provider) await discardStoredKey(provider, profile['secret-id']);
     }
+    return { keyDeleted: disposable };
 }
 
 /** Unique profile name, e.g. "Studio · OpenRouter · deepseek-v3.1". */

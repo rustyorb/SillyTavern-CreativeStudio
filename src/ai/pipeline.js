@@ -3,7 +3,7 @@
 // Pure: the AI call is injected (runTask), so the pipeline is unit-testable with a fake model.
 
 import { clone, uid } from '../core/bytes.js';
-import { newCharacter, upsertArtifact, editArtifactField, findArtifact, logHistory, now } from '../core/project.js';
+import { newCharacter, upsertArtifact, editArtifactField, findArtifact, logHistory, now, createProposal, addProposals } from '../core/project.js';
 import { emptyCardV3, tidyExamples } from '../core/card.js';
 import { newEntry } from '../core/lorebook.js';
 import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
@@ -183,16 +183,23 @@ export const STEPS = [
         apply: (project, v, s) => {
             let next = project;
             let fixed = 0;
+            const offered = [];
             for (const issue of v.issues ?? []) {
                 if (issue.replacement && CARD_FIELDS[issue.field] && issue.severity !== 'low') {
                     const value = issue.field === 'mes_example' ? tidyExamples(issue.replacement, char(next, s).card.data.name) : issue.replacement;
+                    if (s.fillOnly) {
+                        // Building around an existing character never overwrites the author's text: fixes wait for review.
+                        offered.push(createProposal(next, { task: 'character.critique', title: `Fix ${CARD_FIELDS[issue.field]} (${issue.severity})`, target: { type: 'characters', id: s.characterId, path: `card.data.${issue.field}` }, after: value, rationale: `${issue.problem} → ${issue.suggestion}` }));
+                        continue;
+                    }
                     next = editArtifactField(next, 'characters', s.characterId, `card.data.${issue.field}`, value, { actor: 'ai', summary: `Revised ${CARD_FIELDS[issue.field]}: ${issue.problem}` });
                     fixed++;
                 }
             }
+            if (offered.length) next = addProposals(next, offered);
             const notes = (v.issues ?? []).filter(i => !i.replacement || !CARD_FIELDS[i.field]).map(i => ({ level: i.severity === 'high' ? 'error' : i.severity === 'medium' ? 'warn' : 'info', path: i.field, message: `${i.problem} — ${i.suggestion}` }));
-            next = editArtifactField(next, 'characters', s.characterId, 'critique', { time: now(), strengths: v.strengths ?? [], notes }, { actor: 'ai', summary: `Self-critique: ${fixed} field(s) revised` });
-            return { project: next, state: { ...s, polished: fixed } };
+            next = editArtifactField(next, 'characters', s.characterId, 'critique', { time: now(), strengths: v.strengths ?? [], notes }, { actor: 'ai', summary: offered.length ? `Self-critique: ${offered.length} fix(es) proposed for review` : `Self-critique: ${fixed} field(s) revised` });
+            return { project: next, state: { ...s, polished: fixed, proposed: offered.length } };
         },
     },
 ];
@@ -226,6 +233,8 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
     for (const step of STEPS) {
         const st = r.steps[step.id];
         if (!st || st.status === 'done' || st.status === 'skipped') continue;
+        // Retrying one step leaves the other failed steps alone (their own Retry buttons still work).
+        if (r.retryOnly && step.id !== r.retryOnly && ['failed', 'cancelled'].includes(st.status)) continue;
         if (signal?.aborted) { r.status = 'cancelled'; save(); return r; }
         const blocked = step.needs.filter(n => r.selected.includes(n) && r.steps[n]?.status !== 'done');
         if (blocked.length) { r.steps[step.id] = { status: 'blocked', error: `Needs: ${blocked.join(', ')}` }; save(); continue; }
@@ -238,7 +247,8 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
                 res = await runTask(step.task, args);
             } catch (e) {
                 // One automatic retry for a stuck or failed call, so a hands-free run survives a provider hiccup.
-                if (signal?.aborted) throw e;
+                // Not after a timeout on the main connection: SillyTavern cannot abort that request, so a retry would queue behind it.
+                if (signal?.aborted || (e?.timeout && e?.meta?.mode === 'main')) throw e;
                 r.steps[step.id] = { status: 'running', startedAt: r.steps[step.id].startedAt, retrying: e?.message ?? String(e) };
                 save();
                 res = await runTask(step.task, args);
@@ -254,8 +264,17 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
             let durationMs = res.generation?.durationMs ?? 0;
             // Models sometimes skip parts of a structured answer: ask again for exactly what is still missing.
             let still = step.missing?.(getProject(), r.state) ?? [];
+            let repairError = '';
             for (let attempt = 0; still.length && attempt < 2 && !signal?.aborted; attempt++) {
-                const fix = await runTask(step.task, { ...step.build(r.state, getProject(), r.dials ?? {}), only: still });
+                let fix;
+                try {
+                    fix = await runTask(step.task, { ...step.build(r.state, getProject(), r.dials ?? {}), only: still });
+                } catch (e) {
+                    // What the step already wrote stays; the gap is reported instead of failing the step.
+                    if (signal?.aborted) throw e;
+                    repairError = e?.message ?? String(e);
+                    break;
+                }
                 if (!fix) break;
                 const keep = r.state.fillOnly;
                 update(p => {
@@ -267,15 +286,16 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
                 durationMs += fix.generation?.durationMs ?? 0;
                 still = step.missing(getProject(), r.state);
             }
-            r.steps[step.id] = { status: 'done', endedAt: now(), model: res.generation?.label ?? '', durationMs, ...(still.length ? { warning: `Still empty: ${still.join(', ')}` } : {}) };
+            r.steps[step.id] = { status: 'done', endedAt: now(), model: res.generation?.label ?? '', durationMs, ...(still.length ? { warning: `Still empty: ${still.join(', ')}${repairError ? ` (${repairError.slice(0, 80)})` : ''}` } : {}) };
         } catch (e) {
             r.steps[step.id] = { status: signal?.aborted ? 'cancelled' : 'failed', error: e?.message ?? String(e), endedAt: now() };
             if (signal?.aborted) { r.status = 'cancelled'; save(); return r; }
         }
         save();
     }
+    delete r.retryOnly;
     const vals = Object.values(r.steps);
-    r.status = vals.some(x => x.status === 'failed' || x.status === 'blocked') ? 'partial' : 'done';
+    r.status = vals.some(x => x.status === 'failed' || x.status === 'blocked' || x.status === 'cancelled') ? 'partial' : 'done';
     r.ended = now();
     save();
     return r;
@@ -287,13 +307,28 @@ export function retryable(run, stepId) {
     for (const [id, st] of Object.entries(r.steps)) {
         if ((stepId ? id === stepId : true) && ['failed', 'blocked', 'cancelled', 'running'].includes(st.status)) r.steps[id] = { status: 'pending' };
     }
+    if (stepId) r.retryOnly = stepId;
+    else delete r.retryOnly;
     return r;
 }
 
 /** Remove everything a run created (characters, lorebooks, presets, QR sets). */
 export function discardRun(project, run) {
     let p = project;
-    for (const { type, id } of run.state?.created ?? []) p = { ...p, [type]: p[type].filter(a => a.id !== id) };
+    const created = run.state?.created ?? [];
+    for (const { type, id } of created) p = { ...p, [type]: p[type].filter(a => a.id !== id) };
+    // Characters that stay (e.g. "build the rest" around an existing one) must not keep links to what was removed.
+    const gone = new Set(created.map(c => c.id));
+    if (gone.size) {
+        p = {
+            ...p,
+            characters: p.characters.map(c => {
+                if (!c.links) return c;
+                const links = Object.fromEntries(Object.entries(c.links).map(([k, ids]) => [k, Array.isArray(ids) ? ids.filter(id => !gone.has(id)) : ids]));
+                return JSON.stringify(links) === JSON.stringify(c.links) ? c : { ...c, links };
+            }),
+        };
+    }
     p = { ...p, generationRuns: (p.generationRuns ?? []).map(x => (x.id === run.id ? { ...x, status: 'discarded' } : x)) };
     return logHistory(p, { actor: 'user', action: 'discard-run', summary: `Discarded generation “${run.state?.premise?.title ?? run.id}”` });
 }

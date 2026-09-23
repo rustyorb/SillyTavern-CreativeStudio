@@ -165,3 +165,8 @@ test('tidyExamples splits a speaker label glued onto the previous line (real Dee
     assert.equal(tidyExamples(raw), '<START>\n{{user}}: Who are you? Why are you helping me?\n{{char}}: *Static.* I am Nexus.');
     assert.equal(tidyExamples('<START>\n{{user}}: A program.<br>\n{{char}}: No.'), '<START>\n{{user}}: A program.\n{{char}}: No.');
 });
+
+test('tidyExamples leaves prose that starts with a macro alone ("{{char}}\'s voice…")', () => {
+    const raw = "<START>\n{{char}}: Hm.\n{{char}}'s voice is cold.\n{{user}}s bag falls.";
+    assert.equal(tidyExamples(raw), raw);
+});

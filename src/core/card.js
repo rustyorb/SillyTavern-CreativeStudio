@@ -311,10 +311,11 @@ export function tidyExamples(text, charName = '') {
         let pendingNarration = '';
         for (let line of block.split('\n')) {
             if (!line.trim()) continue;
-            line = line.replace(/^\s*\{\{\s*(user|char)\s*\}\}\s*:?\s*/i, (_, who) => `{{${who.toLowerCase()}}}: `);
+            // A speaker label is the macro followed by ":" or a space; "{{char}}'s voice…" is prose and stays as it is.
+            line = line.replace(/^\s*\{\{\s*(user|char)\s*\}\}(?:\s*:|\s)\s*/i, (_, who) => `{{${who.toLowerCase()}}}: `);
             if (nameRe) line = line.replace(nameRe, '{{char}}: ');
             line = line.replace(/^\s*user\s*:\s*/i, '{{user}}: ');
-            const sys = line.match(/^\s*\{\{\s*(system|narrator)\s*\}\}\s*:?\s*(.*)$/i);
+            const sys = line.match(/^\s*\{\{\s*(system|narrator)\s*\}\}(?:\s*:|\s)\s*(.*)$/i);
             if (sys) {
                 const t = sys[2].trim().replace(/^\*+|\*+$/g, '');
                 if (t) pendingNarration = pendingNarration ? `${pendingNarration} ${t}` : t;

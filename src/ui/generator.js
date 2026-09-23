@@ -32,16 +32,21 @@ function commandList() {
 }
 
 export async function startGeneration(store, env, run) {
+    // Only one pipeline per run id, and the run shows as running before anything is awaited (no double starts).
+    if (running.has(run.id)) return run;
     const ac = new AbortController();
     running.set(run.id, ac);
-    await env.saveNow();
-    await env.storage.saveSnapshot(store.get(), 'Before AI generation', 'auto').catch(() => {});
-    const runTask = makeRunTask(store);
-    const r = { ...run, state: { ...run.state, commandList: run.state.commandList ?? commandList() } };
+    const progress = { history: false };
+    store.update(p => ({ ...p, generationRuns: [...(p.generationRuns ?? []).filter(x => x.id !== run.id), { ...run, status: 'running' }] }), 'generation progress', progress);
     try {
+        await env.saveNow();
+        await env.storage.saveSnapshot(store.get(), 'Before AI generation', 'auto').catch(() => {});
+        const runTask = makeRunTask(store);
+        const r = { ...run, state: { ...run.state, commandList: run.state.commandList ?? commandList() } };
         return await runPipeline({
             getProject: () => store.get(),
-            update: (fn, label) => store.update(fn, label),
+            // Progress records are bookkeeping: saved, but not undo steps (undo reverts what was written, not the log).
+            update: (fn, label) => store.update(fn, label, label === 'generation progress' ? progress : undefined),
             runTask: (t, a) => runTask(t, a, ac.signal),
             run: r,
             signal: ac.signal,
@@ -126,7 +131,8 @@ export function Generator({ store, env, project, select }) {
     const [steps, setSteps] = useState(DEFAULT_STEPS);
     const [showDials, setShowDials] = useState(false);
     const runs = (project.generationRuns ?? []).filter(r => r.status !== 'discarded');
-    const active = runs.find(r => r.status === 'running') ?? runs.at(-1);
+    // The live run first; otherwise the latest (a run left "running" by a reload shows as interrupted only if it is the latest).
+    const active = runs.find(r => running.has(r.id)) ?? runs.at(-1);
     const isRunning = active?.status === 'running' && running.has(active.id);
     const go = surprise => {
         const run = newRun({ idea: surprise ? '' : idea.trim(), dials, steps });

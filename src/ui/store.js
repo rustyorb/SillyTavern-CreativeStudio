@@ -3,7 +3,12 @@ import { useEffect, useState } from '../../vendor/preact-htm.mjs';
 
 const MAX_UNDO = 150;
 
-export function createStore(initial) {
+/**
+ * @param {object} initial
+ * @param {object} [opts]
+ * @param {string[]} [opts.sticky] top-level keys that undo/redo leave as they are (records of what happened, not content)
+ */
+export function createStore(initial, { sticky = [] } = {}) {
     let state = initial;
     const listeners = new Set();
     const undo = [];
@@ -12,6 +17,7 @@ export function createStore(initial) {
     let lastTime = 0;
 
     const emit = () => listeners.forEach(l => l(state));
+    const keepSticky = restored => (sticky.length ? { ...restored, ...Object.fromEntries(sticky.filter(k => k in state).map(k => [k, state[k]])) } : restored);
 
     return {
         get: () => state,
@@ -23,10 +29,16 @@ export function createStore(initial) {
          * Replace the state with the result of `fn(state)`.
          * Consecutive edits with the same label within 1.5s coalesce into one undo step (typing).
          */
-        update(fn, label = 'edit') {
+        update(fn, label = 'edit', { history = true } = {}) {
             const prev = state;
             const next = fn(state);
             if (next === prev) return;
+            if (!history) {
+                // Bookkeeping (e.g. generation progress): saved, but not an undo step.
+                state = next;
+                emit();
+                return;
+            }
             const t = Date.now();
             const coalesce = label === lastLabel && t - lastTime < 1500 && undo.length;
             if (!coalesce) {
@@ -51,7 +63,7 @@ export function createStore(initial) {
             const step = undo.pop();
             if (!step) return null;
             redo.push({ state, label: step.label });
-            state = step.state;
+            state = keepSticky(step.state);
             lastLabel = '';
             emit();
             return step.label;
@@ -60,7 +72,7 @@ export function createStore(initial) {
             const step = redo.pop();
             if (!step) return null;
             undo.push({ state, label: step.label });
-            state = step.state;
+            state = keepSticky(step.state);
             lastLabel = '';
             emit();
             return step.label;

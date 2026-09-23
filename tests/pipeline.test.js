@@ -203,3 +203,70 @@ test('tags are tidied (no meta tags, no duplicates, at most 8) and greetings ask
     await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card'] }) });
     assert.equal(h.project.characters[0].card.data.tags.length, MAX_TAGS);
 });
+
+test('review fixes: polish never overwrites an existing character in fill-only mode; its fixes wait as proposals', async () => {
+    const { newCharacter, upsertArtifact } = await import('../src/core/project.js');
+    const h = harness();
+    const c = newCharacter('Kept');
+    Object.assign(c.card.data, { description: 'Author text.', scenario: 'Author scenario.', first_mes: 'Hi.', mes_example: '<START>\n{{char}}: Hm.' });
+    h.opts.update(p => upsertArtifact(p, 'characters', c));
+    const run = newRun({ steps: ['polish'] });
+    for (const s of ['premise', 'concept', 'card', 'greetings']) run.steps[s] = { status: 'done' };
+    run.state = { ...run.state, characterId: c.id, fillOnly: true };
+    await runPipeline({ ...h.opts, run });
+    const d = h.project.characters[0].card.data;
+    assert.equal(d.scenario, 'Author scenario.');
+    const pending = h.project.proposals.filter(p => p.status === 'pending');
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].target.path, 'card.data.scenario');
+});
+
+test('review fixes: a failing repair call keeps what the card step wrote and does not block later steps', async () => {
+    const h = harness({
+        'character.expand': args => { if (args.only) throw new Error('No answer after 500 s'); return { fields: { description: 'D', personality: 'P', scenario: 'S', first_mes: 'F', tags: ['t'] }, rationale: 'r' }; },
+    });
+    const run = await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card', 'greetings'] }) });
+    assert.equal(run.steps.card.status, 'done');
+    assert.match(run.steps.card.warning, /mes_example.*No answer/);
+    assert.equal(run.steps.greetings.status, 'done');
+    assert.equal(h.project.characters[0].card.data.description, 'D');
+});
+
+test('review fixes: discarding a run removes its links from characters that stay', async () => {
+    const { newCharacter, upsertArtifact } = await import('../src/core/project.js');
+    const h = harness();
+    const c = newCharacter('Kept');
+    Object.assign(c.card.data, { description: 'x', scenario: 'y', first_mes: 'z', mes_example: 'm', alternate_greetings: ['a', 'b'] });
+    h.opts.update(p => upsertArtifact(p, 'characters', c));
+    const run = newRun({ steps: ['lore', 'preset', 'qr'] });
+    for (const s of ['premise', 'concept', 'card', 'greetings']) run.steps[s] = { status: 'done' };
+    run.state = { ...run.state, characterId: c.id, fillOnly: true };
+    const done = await runPipeline({ ...h.opts, run });
+    assert.equal(h.project.characters[0].links.lorebooks.length, 1);
+    const after = discardRun(h.project, done);
+    const links = after.characters[0].links;
+    assert.deepEqual([links.lorebooks.length, links.presets.length, links.qrSets.length], [0, 0, 0]);
+    assert.equal(after.characters.length, 1, 'the existing character stays');
+});
+
+test('review fixes: retrying one step does not re-run other failed steps', async () => {
+    const h = harness({ 'lore.structure': new Error('down'), 'media.prompts': new Error('down') });
+    let run = await runPipeline({ ...h.opts, run: newRun() });
+    assert.equal(run.steps.lore.status, 'failed');
+    assert.equal(run.steps.images.status, 'failed');
+    const calls = [];
+    const ok = { ...h.opts, runTask: async (task, args) => { calls.push(task); return { value: structuredClone(FAKE[task]), generation: {} }; } };
+    run = await runPipeline({ ...ok, run: retryable(run, 'lore') });
+    assert.deepEqual(calls, ['lore.structure']);
+    assert.equal(run.steps.images.status, 'failed');
+    assert.equal(run.status, 'partial');
+    assert.equal(run.retryOnly, undefined);
+});
+
+test('review fixes: no automatic retry after a timeout on the main connection (ST cannot abort that request)', async () => {
+    const err = Object.assign(new Error('No answer after 240 s'), { timeout: true, meta: { mode: 'main' } });
+    const h = harness({ 'lore.structure': err });
+    const run = await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card', 'lore'] }) });
+    assert.equal(run.steps.lore.status, 'failed');
+    assert.equal(h.calls.filter(c => c.task === 'lore.structure').length, 1);
+});

@@ -148,3 +148,16 @@ test('reasoning-only output produces actionable errors', async () => {
     const ctx3 = mockCtx({ responses: ['<think>plan</think>Hello there.'] });
     assert.equal((await runChat(ctx3, { messages: [{ role: 'user', content: 'hi' }] })).text, 'Hello there.');
 });
+
+test('a failing repair round-trip keeps the usable first answer; the time limit grows with the answer length', async () => {
+    const { timeoutFor, DEFAULT_TIMEOUT_MS } = await import('../src/ai/gateway.js');
+    const ctx = mockCtx();
+    let n = 0;
+    ctx.generateRaw = async () => { if (n++ === 0) return '{"candidates": []}'; throw new Error('provider exploded'); };
+    const r = await runStructured(ctx, { system: 's', user: 'u', schema: SCHEMA });
+    assert.deepEqual(r.value.candidates, []);
+    assert.match(r.meta.repairError, /exploded/);
+    assert.equal(r.meta.validationErrors.length, 1);
+    assert.equal(timeoutFor(1000), DEFAULT_TIMEOUT_MS);
+    assert.equal(timeoutFor(5000), 500000);
+});
