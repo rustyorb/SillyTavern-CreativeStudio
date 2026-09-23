@@ -277,7 +277,10 @@ export function analyze(text, { knownCommands = null } = {}) {
         if (n === 'var' && mm.args[0] && !vars.scoped.has(mm.args[0])) lints.push({ level: 'warn', message: `{{var::${mm.args[0]}}} reads a scoped variable that is never declared with /let or a closure parameter here.`, line: null });
         if ((n === 'getvar' || n === 'getglobalvar') && mm.args.length > 1 && mm.args[mm.args.length - 1] === '') lints.push({ level: 'warn', message: `{{${mm.name}::${mm.args.join('::')}}} has a trailing "::" and will not resolve.`, line: null });
     }
-    for (const pt of s.plainText) lints.push({ level: 'warn', message: `Text outside any command is discarded by ST: “${pt.text}”`, line: pt.line });
+    // A Quick Reply whose message does not start with "/" is sent as a user message (QuickReplySet.executeWithOptions),
+    // so stray text only matters inside a slash-command script.
+    if (/^\s*\//.test(String(text ?? ''))) for (const pt of s.plainText) lints.push({ level: 'warn', message: `Text outside any command is discarded by ST: “${pt.text}”`, line: pt.line });
+    else if (/(^|\s)\/[a-z][\w-]*(\s|\||$)/im.test(String(text ?? ''))) lints.push({ level: 'warn', message: 'The message starts with plain text, so SillyTavern sends all of it to the chat and none of its /commands run. Start it with a /command to make it a script.', line: 1 });
     for (const v of vars.readLocal) if (v && v !== '?' && !vars.writeLocal.has(v)) lints.push({ level: 'info', message: `Reads chat variable "${v}" that this script never sets (it may come from elsewhere).`, line: null });
     return {
         statements: s.statements,

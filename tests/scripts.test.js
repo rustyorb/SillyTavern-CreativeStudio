@@ -34,7 +34,10 @@ test('analysis reports effects, variables, calls and lints', () => {
 });
 
 test('lint catches common STscript traps', () => {
+    const lead = analyze('hello there /echo x |\n/trigger');
+    assert.ok(lead.lints.some(l => /starts with plain text/.test(l.message)), 'leading text turns the whole QR into a chat message');
     const bad = analyze([
+        '/echo start |',
         'hello there /echo x |',
         '/if left=1 rule=eq right=1 {: /echo y :} else={: /echo n :} |',
         '/incvar key=score |',
@@ -78,4 +81,12 @@ test('QR sets: id quirk, v1 migration, lint', () => {
     assert.ok(lint.some(m => m.includes('Label "A" is used 2 times')));
     assert.ok(lint.some(m => m.includes('"Missing"')));
     assert.ok(lint.some(m => m.includes('Automation ID "x"')));
+});
+
+test('plain-text Quick Reply messages are user messages, not discarded text; stray text inside a script still warns', () => {
+    const plain = analyze('Continue, please.');
+    assert.equal(plain.isScript, false);
+    assert.ok(!plain.lints.some(l => /discarded/.test(l.message)));
+    const script = analyze('/echo hi |\nstray words\n/trigger');
+    assert.ok(script.lints.some(l => /discarded/.test(l.message)));
 });
