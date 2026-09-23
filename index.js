@@ -69,6 +69,43 @@ function addLauncher() {
     else holder.appendChild(button);
 }
 
+/**
+ * A feather in SillyTavern's character panel (next to Export): opens the character on screen in the studio, with its
+ * lorebook and sprites, ready to be improved or to have the rest built around it.
+ */
+function addCharacterButton() {
+    if (document.getElementById('cs-char-button')) return;
+    const block = document.querySelector('#avatar_controls .form_create_bottom_buttons_block');
+    if (!block) return;
+    const button = document.createElement('div');
+    button.id = 'cs-char-button';
+    button.className = 'menu_button fa-solid fa-feather-pointed';
+    button.title = 'Open in Creative Studio: improve this character, or let the AI build what it is missing';
+    button.setAttribute('role', 'button');
+    button.setAttribute('aria-label', 'Open this character in Creative Studio');
+    button.tabIndex = 0;
+    const go = async () => {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        const avatar = ctx?.characters?.[ctx.characterId]?.avatar;
+        if (!avatar) {
+            globalThis.toastr?.info?.('Open a character first.', 'Creative Studio');
+            return;
+        }
+        await openStudio('characters');
+        appModule?.openStCharacter?.(avatar);
+    };
+    button.addEventListener('click', go);
+    button.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            go();
+        }
+    });
+    const after = document.getElementById('export_button');
+    if (after?.parentElement === block) after.after(button);
+    else block.appendChild(button);
+}
+
 function setTopIcon(open) {
     const icon = document.querySelector('#cs-top-button .drawer-icon');
     if (!icon) return;
@@ -103,8 +140,12 @@ document.addEventListener('keydown', e => {
 });
 
 addLauncher();
+addCharacterButton();
 registerCommand();
-// In case the top bar is not built yet when the extension loads.
-globalThis.SillyTavern?.getContext?.().eventSource?.on?.('app_ready', addLauncher);
+// In case the top bar or the character panel is not built yet when the extension loads.
+globalThis.SillyTavern?.getContext?.().eventSource?.on?.('app_ready', () => {
+    addLauncher();
+    addCharacterButton();
+});
 
 globalThis.CreativeStudio = { open: openStudio, close: closeStudio, id: EXT_ID };

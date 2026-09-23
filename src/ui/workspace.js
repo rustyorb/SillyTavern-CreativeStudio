@@ -55,7 +55,7 @@ export function Workspace(props) {
                 <${Icon} name="diagram-project" /> <span>${project.name}</span>
             </button>
             ${TREE.map(t => {
-                const items = project[t.type].filter(a => !q || artifactName(t.type, a).toLowerCase().includes(q));
+                const rows = treeRows(t, project, q);
                 const isCollapsed = collapsed[t.type];
                 return html`<div class="cs-tree-group" key=${t.type}>
                     <div class="cs-tree-group-head">
@@ -65,12 +65,12 @@ export function Workspace(props) {
                         ${t.create && html`<${Button} small icon="plus" title=${`New ${t.label.toLowerCase()}`} onClick=${() => create(t)} />`}
                     </div>
                     ${!isCollapsed && html`<ul class="cs-tree-items">
-                        ${items.map(a => html`<li key=${a.id}>
-                            <button class=${cx('cs-tree-item', selection?.id === a.id && 'active')} onClick=${() => select(t.type, a.id)} title=${artifactName(t.type, a)}>
-                                ${treeBadge(t.type, a)}<span>${artifactName(t.type, a)}</span>
+                        ${rows.map(r => html`<li key=${r.key}>
+                            <button class=${cx('cs-tree-item', !r.folded && selection?.id === r.id && 'active')} onClick=${() => select(r.type, r.id)} title=${r.label}>
+                                ${r.badge}<span>${r.label}</span>
                             </button>
                         </li>`)}
-                        ${!items.length && html`<li class="cs-tree-empty">${q ? 'No match' : 'None yet'}</li>`}
+                        ${!rows.length && html`<li class="cs-tree-empty">${q ? 'No match' : 'None yet'}</li>`}
                     </ul>`}
                 </div>`;
             })}
@@ -90,6 +90,20 @@ export function Workspace(props) {
             <button class="cs-rail-btn" title="Snapshots & live backups" onClick=${() => props.openInspectorAt('snapshots')}><${Icon} name="camera" /></button>
         </nav>`}
     </div>`;
+}
+
+/** The rows of a tree group. Expression sprites fold into one row per character: a library character can have dozens. */
+function treeRows(t, project, q) {
+    const match = r => !q || r.label.toLowerCase().includes(q);
+    const row = (type, a) => ({ key: a.id, type, id: a.id, label: artifactName(type, a), badge: treeBadge(type, a) });
+    if (t.type !== 'media') return project[t.type].map(a => row(t.type, a)).filter(match);
+    const spriteIds = new Set(project.characters.flatMap(c => Object.values(c.sprites ?? {})));
+    const rows = project.media.filter(m => !spriteIds.has(m.id)).map(m => row('media', m));
+    for (const c of project.characters) {
+        const n = Object.keys(c.sprites ?? {}).length;
+        if (n) rows.push({ key: `sprites:${c.id}`, type: 'characters', id: c.id, folded: true, label: `${c.card.data.name} — ${n} expression sprite${n === 1 ? '' : 's'}`, badge: html`<${Icon} name="face-smile" />` });
+    }
+    return rows.filter(match);
 }
 
 function treeBadge(type, a) {

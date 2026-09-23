@@ -6,6 +6,7 @@ import { stContext, stPost } from './env.js';
 import { clone, stableStringify, uid } from '../core/bytes.js';
 import { toSillyTavernShape, V3_ONLY_FIELDS } from '../core/card.js';
 import { jsonDiff } from '../core/diff.js';
+import { spriteFolderFor } from '../core/sprites.js';
 
 const UNSET = '__@@UNSET@@__';
 
@@ -13,7 +14,11 @@ const UNSET = '__@@UNSET@@__';
 
 export function listStCharacters() {
     const ctx = stContext();
-    return (ctx.characters ?? []).map((c, index) => ({ index, avatar: c.avatar, name: c.name, shallow: !!c.shallow, tags: c.tags ?? [] }));
+    return (ctx.characters ?? []).map((c, index) => ({
+        index, avatar: c.avatar, name: c.name, shallow: !!c.shallow, tags: c.tags ?? [],
+        world: c.data?.extensions?.world ?? '', lastChat: Number(c.date_last_chat) || 0, fav: c.fav === true || c.fav === 'true',
+        current: ctx.characterId !== undefined && String(ctx.characterId) === String(index) && !ctx.groupId,
+    }));
 }
 
 /** Full character JSON as stored by ST (top-level V1 mirror + data). */
@@ -104,6 +109,21 @@ export async function restoreCharacterBackup(backup) {
     for (const k of Object.keys(current?.data ?? {})) if (!(k in (payload.data ?? {}))) payload.data[k] = UNSET;
     await stPost('/api/characters/merge-attributes', payload);
     await ctx.getOneCharacter?.(avatar);
+}
+
+// ------------------------------------------------------------------------------------ sprites
+
+/** The Character Expressions folder of a character (respects a folder override set in ST). */
+export function stSpriteFolder(avatar, name) {
+    return spriteFolderFor(avatar, name, stContext().extensionSettings?.expressionOverrides ?? []);
+}
+
+/** Sprites in a Character Expressions folder: [{ label, path }] (path is a URL under /characters/). */
+export async function listStSprites(folder) {
+    const ctx = stContext();
+    const res = await fetch(`/api/sprites/get?name=${encodeURIComponent(folder)}`, { headers: ctx.getRequestHeaders() });
+    if (!res.ok) throw new Error(`Sprite list failed: HTTP ${res.status}`);
+    return res.json();
 }
 
 // ------------------------------------------------------------------------------------ world info

@@ -1,6 +1,6 @@
 // Project assembly: overview, health, relationships/dependencies, publish bundle, deliberate apply-to-SillyTavern plan.
 import { html, useState, useMemo, useEffect, Button, Icon, Badge, TextInput, TextArea, Section, Empty, Diagnostics, Modal, Toggle, Select, downloadBlob, pickFile, fileBytes, cx } from '../kit.js';
-import { dependencyReport, artifactName, findArtifact, migrateProject, logHistory, createProject } from '../../core/project.js';
+import { dependencyReport, artifactName, findArtifact, migrateProject, logHistory, createProject, cardForSt, stWorldName } from '../../core/project.js';
 import { validateCardV3 } from '../../core/card.js';
 import { lintWorld } from '../../core/lorebook.js';
 import { lintCc } from '../../core/preset.js';
@@ -161,7 +161,7 @@ function ApplyPlan({ store, env, project, onClose }) {
             } });
         }
         for (const lb of project.lorebooks) {
-            const name = lb.origin?.kind === 'st' ? lb.origin.name : lb.name;
+            const name = stWorldName(lb);
             items.push({ key: `lb:${lb.id}`, label: `${worlds.includes(name) ? 'Overwrite' : 'Create'} World Info “${name}”`, run: async () => {
                 const data = clone(lb.data);
                 delete data.originalData;
@@ -172,12 +172,12 @@ function ApplyPlan({ store, env, project, onClose }) {
             const linked = c.origin?.kind === 'st' ? c.origin.avatar : c.stAvatar;
             items.push({ key: `ch:${c.id}`, label: linked ? `Update character ${c.card.data.name} (${linked})` : `Create character ${c.card.data.name}`, run: async () => {
                 if (linked) {
-                    const r = await applyCardToSt(linked, c.card, c.topLevelExtras);
+                    const r = await applyCardToSt(linked, cardForSt(project, c), c.topLevelExtras);
                     return { backup: r.backup, note: r.fidelity.length ? `${r.fidelity.length} field difference(s) after save` : 'verified' };
                 }
                 const m = c.avatarMediaId ? findArtifact(project, 'media', c.avatarMediaId) : null;
                 const image = m ? await toPngBytes(await mediaBytes(env, m)) : null;
-                const avatar = await importIntoSt(exportCard('png-v3', { card: c.card, topLevelExtras: c.topLevelExtras, image }).bytes, 'png', `${c.card.data.name}.png`);
+                const avatar = await importIntoSt(exportCard('png-v3', { card: cardForSt(project, c), topLevelExtras: c.topLevelExtras, image }).bytes, 'png', `${c.card.data.name}.png`);
                 store.update(p => ({ ...p, characters: p.characters.map(x => (x.id === c.id ? { ...x, stAvatar: avatar } : x)) }), 'link ST character');
                 return { note: `created ${avatar}` };
             } });

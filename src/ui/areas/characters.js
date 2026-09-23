@@ -8,10 +8,11 @@ import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, c
 import { openAiSetup } from '../providers-panel.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
 import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
-import { startGeneration, developCharacter, isRunning } from '../generator.js';
+import { startGeneration, developCharacter, isRunning, missingSteps } from '../generator.js';
+import { openPullPicker } from '../st-pull.js';
 import { newRun } from '../../ai/pipeline.js';
 import {
-    findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal,
+    findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal, cardForSt,
 } from '../../core/project.js';
 import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3, tidyExamples } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
@@ -19,7 +20,7 @@ import { importCardFile, exportCard, EXPORT_KINDS, withSpriteAssets } from '../.
 import { CARD_FIELDS, FIELD_LABELS, tidyTags } from '../../ai/tasks.js';
 import { characterBookToWorld, worldToCharacterBook, normalizeWorld } from '../../core/lorebook.js';
 import { clone, uid } from '../../core/bytes.js';
-import { listStCharacters, exportStCharacterPng, importIntoSt, applyCardToSt, getStCharacter } from '../../st/live.js';
+import { importIntoSt, applyCardToSt, getStCharacter, stSpriteFolder } from '../../st/live.js';
 import { jsonDiff } from '../../core/diff.js';
 import { saveMedia, mediaBytes, toPngBytes } from '../media.js';
 import { recordBackup } from '../inspector.js';
@@ -34,7 +35,6 @@ export function CharactersArea(props) {
 // ============================================================================================ home
 
 function CharacterHome({ store, env, project, select }) {
-    const [stPicker, setStPicker] = useState(false);
     const add = (art, summary) => {
         store.update(p => upsertArtifact(p, 'characters', art, { action: 'create', actor: art.origin?.kind === 'import' ? 'import' : 'user', summary }), 'create character');
         select('characters', art.id);
@@ -77,7 +77,7 @@ function CharacterHome({ store, env, project, select }) {
             <${Button} icon="user-plus" label="New character" onClick=${() => add(newCharacter('New character'), 'New character')} />
             <${Button} icon="masks-theater" label="New scenario" title="Scenario / narrator card" onClick=${() => add(newCharacter('New scenario', null, { kind: 'scenario' }), 'New scenario')} />
             <${Button} icon="file-import" label="Import file…" title="PNG (chara/ccv3), CHARX, or JSON (V1/V2/V3)" onClick=${importFile} />
-            <${Button} icon="plug" label="From SillyTavern…" onClick=${() => setStPicker(true)} />
+            <${Button} icon="user-plus" label="From SillyTavern…" title="Bring in one of your SillyTavern characters with its lorebook and sprites" onClick=${openPullPicker} />
         </div>
         <div class="cs-area-body">
             <${Ideation} store=${store} env=${env} project=${project} select=${select} />
@@ -97,43 +97,7 @@ function CharacterHome({ store, env, project, select }) {
                     })}</tbody>
                 </table>` : html`<${Empty} icon="user-pen" title="No characters yet">Start from a premise above, import a card, or pull one from SillyTavern.</${Empty}>`}
             </${Section}>
-        </div>
-        ${stPicker && html`<${StCharacterPicker} store=${store} env=${env} onClose=${() => setStPicker(false)} onPicked=${(art) => { setStPicker(false); add(art, `Pulled ${art.card.data.name} from SillyTavern`); }} />`}`;
-}
-
-function StCharacterPicker({ store, env, onClose, onPicked }) {
-    const [q, setQ] = useState('');
-    const [busy, setBusy] = useState('');
-    let list = [];
-    try { list = listStCharacters(); } catch (e) { list = []; }
-    const shown = list.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()));
-    const pick = async c => {
-        setBusy(c.avatar);
-        try {
-            const png = await exportStCharacterPng(c.avatar);
-            const imported = importCardFile(png, c.avatar);
-            const art = newCharacter(imported.card.data.name, imported.card, {
-                topLevelExtras: imported.topLevelExtras,
-                origin: { kind: 'st', avatar: c.avatar, format: imported.format, diagnostics: imported.diagnostics, at: new Date().toISOString() },
-            });
-            const { media, apply } = await saveMedia(env, store.get(), png, { name: `${c.name} avatar`, role: 'avatar' });
-            store.update(apply, 'add media');
-            art.avatarMediaId = media.id;
-            art.links.media = [media.id];
-            onPicked(art);
-        } catch (e) {
-            env.toast(`Could not read ${c.name}: ${e.message}`, 'error');
-        } finally { setBusy(''); }
-    };
-    return html`<${Modal} title="Pull a character from SillyTavern" onClose=${onClose}>
-        <div class="cs-muted cs-small">The studio works on a copy. Changes go back to SillyTavern only when you choose “Apply to SillyTavern”, and the previous version is kept as a backup.</div>
-        <input class="text_pole" placeholder="Search…" value=${q} onInput=${e => setQ(e.currentTarget.value)} aria-label="Search characters" />
-        ${shown.length ? html`<ul class="cs-list">${shown.map(c => html`<li class="cs-list-item" key=${c.avatar} onClick=${() => !busy && pick(c)}>
-            <img src=${`/thumbnail?type=avatar&file=${encodeURIComponent(c.avatar)}`} alt="" width="28" height="28" style="border-radius:4px;object-fit:cover" />
-            <span class="cs-grow">${c.name}</span><span class="cs-muted cs-small">${c.avatar}</span>
-            ${busy === c.avatar && html`<${Icon} name="spinner" />`}
-        </li>`)}</ul>` : html`<${Empty} title="No characters found in SillyTavern" />`}
-    </${Modal}>`;
+        </div>`;
 }
 
 // -------------------------------------------------------------------------------------- ideation
@@ -246,7 +210,7 @@ function CharacterEditor(props) {
         store.update(p => removeArtifact(p, 'characters', ch.id, { summary: `Removed ${d.name}` }), 'remove character');
         props.setSelection(null);
     };
-    const ep = { ...props, setData, setPath, d };
+    const ep = { ...props, setData, setPath, d, setTab };
     const byline = [ch.kind === 'scenario' ? 'Scenario' : 'Character', d.character_version && `v${d.character_version}`, d.creator && `by ${d.creator}`, d.nickname && `“${d.nickname}”`].filter(Boolean).join(' · ');
     return html`<div class="cs-area-head cs-entity-head" style=${avatar ? `background-image:url("${avatar.url}")` : ''}>
             ${avatar ? html`<img src=${avatar.url} alt="" width="46" height="46" style="border-radius:6px;object-fit:cover;border:1px solid var(--cs-line)" />`
@@ -345,6 +309,15 @@ function ConceptPanel({ store, env, project, ch }) {
     </${Section}>`;
 }
 
+const STEP_WHAT = { card: 'the empty card fields', greetings: 'openings', lore: 'a lorebook', preset: 'a preset', regex: 'regex', qr: 'Quick Replies', images: 'image prompts', art: 'a portrait' };
+
+/** What "Build the rest for me" would add to this character, in words. */
+function buildsWhat(ch) {
+    const what = missingSteps(ch).map(s => STEP_WHAT[s]).filter(Boolean);
+    if (!what.length) return 'Nothing is missing: Critique & fix is the way to improve it.';
+    return `Builds ${what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what.at(-1)}` : what[0]}.`;
+}
+
 function CoreTab(p) {
     const { d, setData, store, ch, env, project } = p;
     const ai = useAiTask(store);
@@ -375,12 +348,18 @@ function CoreTab(p) {
             <${TextInput} label="Version" value=${d.character_version} onChange=${v => setData('character_version', v)} />
             <${Select} label="Kind" value=${ch.kind} options=${[{ value: 'character', label: 'Character' }, { value: 'scenario', label: 'Scenario / narrator' }]} onChange=${v => store.update(pr => editArtifactField(pr, 'characters', ch.id, 'kind', v), 'kind')} />
         </div>
+        ${ch.origin?.kind === 'st' && html`<div class="cs-st-copy">
+            <${Icon} name="feather-pointed" />
+            <span class="cs-grow">A copy of <strong>${ch.origin.avatar}</strong> from SillyTavern. Improve it here; SillyTavern changes only when you apply it, and its current version is kept as a backup.</span>
+            <${Button} small icon="upload" label="Apply to SillyTavern…" onClick=${() => p.setTab('publish')} />
+        </div>`}
         <div class="cs-row">
             <${Button} kind="ai" icon="bolt" label=${building ? 'Building…' : 'Build the rest for me'} disabled=${building}
                 title="Fills every empty field, then writes openings, lore, a preset, regex, Quick Replies and image prompts around this character. Fields you wrote are kept."
                 onClick=${() => developCharacter(store, env, ch.id)} />
             <${Button} kind="ai" icon="magnifying-glass-chart" label="Critique & fix" title=${isHandsFree(project) ? 'Reviews the card and applies the concrete fixes (undo with Ctrl+Z)' : 'Reviews the card and proposes fixes'} onClick=${critique} disabled=${ai.busy} />
             <${AiStatus} ai=${ai} />
+            ${!building && html`<span class="cs-muted cs-small">${buildsWhat(ch)}</span>`}
         </div>
         ${building && html`<div class="cs-muted cs-small"><span class="cs-spin"><${Icon} name="spinner" /></span> Building around ${d.name}: ${building.selected.filter(id => building.steps[id]?.status === 'done').length} of ${building.selected.length} steps done. Progress also shows in Project → Generate.</div>`}
         ${ch.critique && html`<${Section} title=${`Critique · ${new Date(ch.critique.time).toLocaleString()}`}>
@@ -645,9 +624,10 @@ function ImagesTab({ store, env, project, ch }) {
             const m = findArtifact(project, 'media', id);
             if (m) bytes[label] = await mediaBytes(env, m);
         }
-        const r = await installSprites(d.name, bytes);
+        const folder = stLinked ? stSpriteFolder(stLinked, d.name) : d.name;
+        const r = await installSprites(folder, bytes);
         const ok = r.filter(x => x.ok).length;
-        env.toast(`Installed ${ok} of ${r.length} sprite(s) for ${d.name}. Turn on Character Expressions in SillyTavern's extensions to see them.`, ok === r.length ? 'ok' : 'error', 8000);
+        env.toast(`Installed ${ok} of ${r.length} sprite(s) in characters/${folder}. Turn on Character Expressions in SillyTavern's extensions to see them.`, ok === r.length ? 'ok' : 'error', 8000);
     });
 
     const labels = spriteSet === 'all' ? Object.keys(EXPRESSIONS) : CORE_EXPRESSIONS;
@@ -827,7 +807,7 @@ function PublishTab({ store, env, project, ch, d }) {
         setBusy('apply');
         try {
             const current = await getStCharacter(linked);
-            const diff = jsonDiff(current?.data ?? {}, ch.card.data, 'data').filter(x => !/^data\.extensions\.(fav)$/.test(x.path));
+            const diff = jsonDiff(current?.data ?? {}, cardForSt(project, ch).data, 'data').filter(x => !/^data\.extensions\.(fav)$/.test(x.path));
             setReview({ current, diff });
         } catch (e) { env.toast(`Could not read ${linked} from SillyTavern: ${e.message}`, 'error'); } finally { setBusy(''); }
     };
@@ -835,7 +815,7 @@ function PublishTab({ store, env, project, ch, d }) {
         setBusy('apply');
         try {
             await env.storage.saveSnapshot(store.get(), `Before applying ${d.name} to SillyTavern`, 'auto').catch(() => {});
-            const { backup, fidelity, renamed } = await applyCardToSt(linked, ch.card, ch.topLevelExtras);
+            const { backup, fidelity, renamed } = await applyCardToSt(linked, cardForSt(project, ch), ch.topLevelExtras);
             recordBackup(store, backup, `Applied ${d.name} to SillyTavern (${linked})`);
             setLastNotes([
                 'Applied through /api/characters/merge-attributes. The previous version is saved under Snapshots → Live SillyTavern backups.',
@@ -850,11 +830,12 @@ function PublishTab({ store, env, project, ch, d }) {
         if (!(await env.confirm(`Create ${d.name} as a new character in SillyTavern?`, 'The card is imported as a PNG with both chunks; the studio then reads it back to report anything ST changed.'))) return;
         setBusy('create');
         try {
-            const r = exportCard('png-v3', { card: ch.card, topLevelExtras: ch.topLevelExtras, image: await cardImage() });
+            const card = cardForSt(project, ch);
+            const r = exportCard('png-v3', { card, topLevelExtras: ch.topLevelExtras, image: await cardImage() });
             const avatar = await importIntoSt(r.bytes, 'png', `${safeName(d.name)}.png`);
             const stored = await getStCharacter(avatar);
             const { fidelityReport } = await import('../../st/live.js');
-            const fid = fidelityReport(ch.card, stored);
+            const fid = fidelityReport(card, stored);
             store.update(p => logHistory(editArtifactField(p, 'characters', ch.id, 'stAvatar', avatar, { summary: `Created in SillyTavern as ${avatar}` }), { actor: 'st', action: 'create-live', target: { type: 'characters', id: ch.id }, summary: `Created ${avatar} in SillyTavern` }), 'create in ST');
             setLastNotes([`Created ${avatar}.`, ...(fid.length ? [`Differences after ST import: ${fid.slice(0, 8).map(f => `${f.kind} ${f.path}`).join('; ')}`] : ['Verified: SillyTavern stored the card data unchanged.'])]);
             env.toast(`Created ${avatar} in SillyTavern`, 'ok');

@@ -14,7 +14,7 @@ Then it critiques its own work and fixes it. You steer; the AI writes.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-112%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-118%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -186,6 +186,31 @@ reach works. Prefer SillyTavern's Image Generation extension? Pick it instead. S
 
 <div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
 
+## ✦ Already have characters?
+
+<div align="center">
+  <img src="docs/assets/bring.webp" alt="SillyTavern's character panel with the Creative Studio feather circled, and an arrow to the studio showing the same character on its stage, with its lorebook and its sprites already in the project" width="100%" />
+  <br />
+  <sub><i>SillyTavern's own Seraphina: one click brought her in with her lorebook “Eldoria” and all 28 of her sprites, in under three seconds.</i></sub>
+</div>
+
+<br />
+
+Your SillyTavern library is the other way in. Click the **feather** in SillyTavern's character panel (next to
+Export), or **Start from one of my characters…** on the studio's Project page.
+
+- **Everything comes along.** The card and its avatar, the lorebook the character is linked to, and its expression
+  sprites (from its Character Expressions folder, even one you have overridden).
+- **Improve it.** *Critique & fix* reviews the card and repairs what is weak. Every field has *Rewrite* and *3 takes*.
+- **Or add what it lacks.** *Build the rest for me* says up front what it will add (openings, a lorebook, a preset,
+  regex, Quick Replies, image prompts, a portrait) and never overwrites what is already there.
+- **SillyTavern changes only when you say so.** *Apply to SillyTavern* shows a field-by-field diff first and keeps a
+  backup of what it replaces. Click the feather again later and you land back in the same project.
+
+Characters the studio sends to SillyTavern arrive already linked to their lorebook, so nothing needs wiring up by hand.
+
+<div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
+
 ## ✦ The tour
 
 It is a full workbench, not just a generator. Everything the AI makes stays editable by hand, and every
@@ -262,7 +287,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 | Area | What you can do |
 |---|---|
 | **Project** | Generate a complete roleplay; premise and notes; health (every validator in one list); relationships & dependencies; **Publish bundle** (ST-native files + manifest + README + re-importable project); **Apply to SillyTavern** (reviewed plan, snapshot and per-item backups) |
-| **Characters** | *Just build it for me* from a premise; distinct concepts to pick from; *Build the rest for me* (fills only what is empty, never duplicates); *Write it* on empty fields; three-take rewrites; greetings with different openings; *Critique & fix*; full V3 editing (nickname, group-only greetings, multilingual notes, source, dates, assets, extensions); embedded lorebook ⇄ project lorebook; spec validation vs the **ST 1.19 support matrix**; import PNG/CHARX/JSON (V1/V2/V3), export ST-style PNG, spec-V3 PNG, CHARX and JSON; pull from, apply to, or create in SillyTavern with fidelity read-back |
+| **Characters** | *Just build it for me* from a premise; distinct concepts to pick from; *Build the rest for me* (fills only what is empty, never duplicates); *Write it* on empty fields; three-take rewrites; greetings with different openings; *Critique & fix*; full V3 editing (nickname, group-only greetings, multilingual notes, source, dates, assets, extensions); embedded lorebook ⇄ project lorebook; spec validation vs the **ST 1.19 support matrix**; import PNG/CHARX/JSON (V1/V2/V3), export ST-style PNG, spec-V3 PNG, CHARX and JSON; bring in from SillyTavern with its lorebook and sprites (feather in ST's character panel), apply back with a diff and a backup, or create in SillyTavern already linked to its lorebook, with fidelity read-back |
 | **Lore** | *Build the world* (linked to the character automatically); every 1.19 entry control; lint; **activation preview** that explains why each entry fires, what beat it, and what reaches the model; extraction from text or the current chat; contradiction and gap audit; key suggestions |
 | **Prompts & Presets** | Generate a preset from goals or from the project; Chat Completion Prompt Manager editor (order, enable, roles, relative/in-chat depth, triggers, forbid overrides, divider markers used by large community presets); samplers and formatting; assembled-prompt preview with token counts from ST's tokenizer; **live dry run**; AI critique; versions and compare; Text Completion instruct/context/system-prompt/reasoning templates rendered by **SillyTavern's own functions**; connection profiles shown as *selections*, separate from preset contents |
 | **Regex Lab** | One-click recipes; global, preset-scoped and character-scoped scripts in engine order; **stage preview** (saved text, display, prompt, edit, World Info, reasoning) with fixtures, in a worker with a timeout; lint; order-sensitivity detection; hands-free mode adds only scripts that pass their own tests |
@@ -332,7 +357,8 @@ No. Pulling something from SillyTavern makes a copy in the project. Changes go b
 <details>
 <summary><b>Can I use it on a character I already have?</b></summary>
 <br />
-Yes. Pull the character in (Characters → <i>From SillyTavern…</i>) and press <b>Build the rest for me</b>. It fills only
+Yes. Click the feather in SillyTavern's character panel (or <i>Start from one of my characters…</i> in the studio). Its
+lorebook and sprites come along. Then press <b>Critique &amp; fix</b> to improve it, or <b>Build the rest for me</b> to add
 what is missing: empty fields, openings, a lorebook, a preset and so on. What you wrote stays untouched.
 </details>
 
@@ -384,7 +410,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-112 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+118 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline. A live suite runs inside a SillyTavern tab against the real server (it creates and then removes
 `CSTEST_*` items):

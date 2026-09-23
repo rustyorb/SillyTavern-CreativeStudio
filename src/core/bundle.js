@@ -3,7 +3,7 @@
 
 import { utf8Encode, clone } from './bytes.js';
 import { exportCard } from './cardio.js';
-import { artifactName, dependencyReport, PROJECT_SCHEMA } from './project.js';
+import { artifactName, dependencyReport, cardForSt, PROJECT_SCHEMA } from './project.js';
 import { KINDS, stripSensitive } from './preset.js';
 
 
@@ -22,14 +22,17 @@ export function buildBundle(project, opts = {}) {
     const entries = [];
     const cardFormat = opts.cardFormat ?? 'png-v3';
 
+    // Each card names its lorebook by the file name it has in this bundle, so ST links them on import.
+    const worldOf = lb => safe(lb.name);
+    const cards = new Map(project.characters.map(c => [c.id, cardForSt(project, c, worldOf)]));
     for (const c of project.characters) {
         const name = safe(c.card.data.name);
-        const r = exportCard(cardFormat, { card: c.card, topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null });
+        const r = exportCard(cardFormat, { card: cards.get(c.id), topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null });
         put(`characters/${name}.png`, r.bytes);
         notes.push(...r.notes.map(n => `${name}: ${n}`));
         entries.push({ type: 'character', name: c.card.data.name, path: `characters/${name}.png`, format: cardFormat, embeddedLorebook: !!c.card.data.character_book?.entries?.length, scopedRegex: c.card.data.extensions?.regex_scripts?.length ?? 0 });
         if (opts.includeCharx) {
-            const x = exportCard('charx', { card: c.card, topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null, assetFiles: opts.assetFiles?.[c.id] ?? {} });
+            const x = exportCard('charx', { card: cards.get(c.id), topLevelExtras: c.topLevelExtras, image: opts.images?.[c.id] ?? null, assetFiles: opts.assetFiles?.[c.id] ?? {} });
             put(`characters/${name}.charx`, x.bytes);
             entries.push({ type: 'character-charx', name: c.card.data.name, path: `characters/${name}.charx` });
         }
@@ -39,7 +42,8 @@ export function buildBundle(project, opts = {}) {
         const data = clone(lb.data);
         delete data.originalData;
         put(`worlds/${name}.json`, JSON.stringify(data, null, 4));
-        entries.push({ type: 'lorebook', name: lb.name, path: `worlds/${name}.json`, entries: Object.keys(data.entries ?? {}).length });
+        const linkedBy = project.characters.filter(c => cards.get(c.id).data.extensions?.world === name).map(c => c.card.data.name);
+        entries.push({ type: 'lorebook', name: lb.name, path: `worlds/${name}.json`, entries: Object.keys(data.entries ?? {}).length, linkedBy });
     }
     for (const pr of project.presets) {
         const name = safe(pr.name);
@@ -112,7 +116,7 @@ function readme(project, manifest, deps) {
     }
     if (by('lorebook').length) {
         L.push(`## ${n++}. World Info`, '');
-        for (const e of by('lorebook')) L.push(`- \`${e.path}\` (${e.entries} entries): World Info panel → Import. Then link it to the character (globe icon on the character card) or enable it globally.`);
+        for (const e of by('lorebook')) L.push(`- \`${e.path}\` (${e.entries} entries): World Info panel → Import. ${e.linkedBy?.length ? `${e.linkedBy.join(', ')} already name${e.linkedBy.length === 1 ? 's' : ''} it as ${e.linkedBy.length === 1 ? 'its' : 'their'} lorebook, so the link is made once both are imported.` : 'Then link it to a character (globe icon on the character card) or enable it globally.'}`);
         L.push('');
     }
     if (by('character').length) {

@@ -283,9 +283,29 @@ export function artifactName(type, a) {
     }
 }
 
+/** The name SillyTavern files a lorebook under (sanitize-filename drops these characters); pulled books keep their ST name. */
+export function stWorldName(lb) {
+    const name = lb?.origin?.kind === 'st' && lb.origin.name ? lb.origin.name : lb?.name ?? '';
+    return String(name).replace(/[/?<>\\:*|"\x00-\x1f\x80-\x9f]/g, '');
+}
+
+/**
+ * The card as SillyTavern should receive it. ST links a character to its lorebook by name (data.extensions.world),
+ * so the first lorebook linked in the project becomes that link, unless the card already names one.
+ */
+export function cardForSt(project, ch, nameOf = stWorldName) {
+    if (ch?.card?.data?.extensions?.world) return ch.card;
+    const lb = (ch?.links?.lorebooks ?? []).map(id => findArtifact(project, 'lorebooks', id)).find(Boolean);
+    const name = lb ? nameOf(lb) : '';
+    if (!name) return ch.card;
+    const card = clone(ch.card);
+    card.data.extensions = { ...(card.data.extensions ?? {}), world: name };
+    return card;
+}
+
 export function installHint(type, a) {
     switch (type) {
-        case 'lorebooks': return 'World Info panel → Import (JSON). Then link it to the character (globe icon) or enable globally.';
+        case 'lorebooks': return 'World Info panel → Import (JSON). Characters from this project already name it as their lorebook, so the link is made as soon as it is imported.';
         case 'presets': return {
             cc: 'AI Response Configuration (Chat Completion) → Import preset.',
             textgen: 'AI Response Configuration (Text Completion) → Import preset.',

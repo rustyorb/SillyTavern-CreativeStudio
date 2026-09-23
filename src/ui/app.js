@@ -7,6 +7,7 @@ import { Workspace, AREA_FOR_TYPE } from './workspace.js';
 import { Palette } from './palette.js';
 import { isHandsFree } from './proposals.js';
 import { AiSetup } from './providers-panel.js';
+import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt } from './st-pull.js';
 
 /** A new project starts with the creation model chosen last time (if that profile still exists). */
 function withDefaultCreationModel(project) {
@@ -22,6 +23,18 @@ function withDefaultCreationModel(project) {
 
 let store = null;
 let studioEnv = null;
+let pendingStCharacter = null;
+
+/**
+ * "Open in Creative Studio" from SillyTavern's character panel: the studio opens that character, in the project
+ * that already holds it if there is one, otherwise in a fresh project named after it.
+ */
+export function openStCharacter(avatar) {
+    pendingStCharacter = avatar;
+    globalThis.dispatchEvent(new CustomEvent('cs-open-st-character'));
+}
+
+const isEmptyProject = p => !['characters', 'lorebooks', 'presets', 'regexScripts', 'qrSets'].some(k => p[k]?.length);
 
 /** Mount (or re-show) the studio into the given root element. */
 export async function mountStudio(root, { route, onClose }) {
@@ -67,12 +80,55 @@ function Studio({ store, env, initialRoute, onClose }) {
     const [toast, setToast] = useState(null);
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [aiSetupOpen, setAiSetupOpen] = useState(false);
+    const [pullOpen, setPullOpen] = useState(false);
 
     useEffect(() => env.onSaveState(setSaveState), [env]);
     useEffect(() => {
         const open = () => setAiSetupOpen(true);
         globalThis.addEventListener('cs-ai-setup', open);
         return () => globalThis.removeEventListener('cs-ai-setup', open);
+    }, []);
+    const showPulled = (r, where = '') => {
+        setPullOpen(false);
+        setArea('characters');
+        setSelection({ type: 'characters', id: r.character.id });
+        env.toast(r.existing && where ? `Opened ${r.character.card.data.name} in its project “${where}”.` : pulledSummary(r), r.notes.length ? 'error' : 'ok', 9000);
+    };
+    useEffect(() => {
+        const open = () => setPullOpen(true);
+        globalThis.addEventListener('cs-pull-open', open);
+        return () => globalThis.removeEventListener('cs-pull-open', open);
+    }, []);
+    useEffect(() => {
+        const take = async () => {
+            const avatar = pendingStCharacter;
+            pendingStCharacter = null;
+            if (!avatar) return;
+            try {
+                const stChar = (globalThis.SillyTavern.getContext().characters ?? []).find(c => c.avatar === avatar);
+                const current = store.get();
+                let where = '';
+                if (!characterFromSt(current, avatar)) {
+                    const home = (await env.storage.listProjects().catch(() => [])).find(x => (x.stAvatars ?? []).includes(avatar));
+                    if (home && home.id !== current.id) {
+                        await env.saveNow();
+                        store.reset(await env.storage.loadProject(home.id));
+                        where = home.name;
+                    } else if (!isEmptyProject(current)) {
+                        await env.saveNow();
+                        store.reset(withDefaultCreationModel(createProject(stChar?.name ?? 'From SillyTavern')));
+                    } else if (stChar?.name && /^(My first project|Untitled project)$/.test(current.name)) {
+                        store.update(p => ({ ...p, name: stChar.name }), 'rename project');
+                    }
+                }
+                showPulled(await pullStCharacter(store, env, avatar, { onStep: step => env.toast(step, '', 30000) }), where);
+            } catch (e) {
+                env.toast(`Could not open that character: ${e.message}`, 'error', 8000);
+            }
+        };
+        take();
+        globalThis.addEventListener('cs-open-st-character', take);
+        return () => globalThis.removeEventListener('cs-open-st-character', take);
     }, []);
     useEffect(() => env.onToast(t => {
         setToast(t);
@@ -154,7 +210,9 @@ function Studio({ store, env, initialRoute, onClose }) {
             else if (i.id === 'snapshot') { await env.saveNow(); await env.storage.saveSnapshot(store.get(), `Snapshot ${new Date().toLocaleString()}`); env.toast('Snapshot saved', 'ok'); }
             else if (i.id === 'proposals') openInspectorAt('proposals');
             else if (i.id === 'inspector') setInspectorOpen(!inspectorOpen);
+            else if (i.id === 'pull') setPullOpen(true);
         }} />`}
+        ${pullOpen && html`<${StCharacterPicker} store=${store} env=${env} project=${project} onClose=${() => setPullOpen(false)} onDone=${showPulled} />`}
         ${aiSetupOpen && html`<${AiSetup} store=${store} env=${env} project=${project} onClose=${() => setAiSetupOpen(false)} />`}
         ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
     </div>`;

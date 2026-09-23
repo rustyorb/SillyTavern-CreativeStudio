@@ -118,7 +118,9 @@ export function createStorage(transport) {
                 await writeJson(projectFile(doc.id), doc);
                 const idx = await readIndex(true);
                 const prev = idx.projects.find(p => p.id === doc.id) ?? {};
-                const entry = { ...prev, id: doc.id, name: doc.name, modified: doc.modified, characters: doc.characters.length };
+                // stAvatars: which SillyTavern characters live in this project ("Open in Creative Studio" returns to it).
+                const stAvatars = doc.characters.map(c => (c.origin?.kind === 'st' ? c.origin.avatar : c.stAvatar)).filter(Boolean);
+                const entry = { ...prev, id: doc.id, name: doc.name, modified: doc.modified, characters: doc.characters.length, stAvatars };
                 const others = idx.projects.filter(p => p.id !== doc.id);
                 await writeIndex({ ...idx, projects: [...others, entry], lastOpen: doc.id });
                 return { where: 'server', revision: doc.revision, conflict };

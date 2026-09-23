@@ -9,6 +9,7 @@ import { commandRegistry, describeCommand } from '../st/stscript-live.js';
 import { paint, imageSettings, imageReady, familyOf } from '../st/comfy.js';
 import { FAMILIES } from '../core/comfy.js';
 import { saveMedia } from './media.js';
+import { openPullPicker } from './st-pull.js';
 
 /** Controllers of runs in flight, so any mounted view (or none) can cancel them. */
 const running = new Map();
@@ -191,6 +192,9 @@ export function Generator({ store, env, project, select }) {
             <${Button} kind="ai" icon="wand-magic-sparkles" label=${idea.trim() ? 'Generate it' : 'Surprise me'} onClick=${() => go(!idea.trim())} disabled=${isRunning} />
             ${idea.trim() && html`<${Button} icon="dice" label="Ignore my idea, surprise me" onClick=${() => go(true)} disabled=${isRunning} />`}
             <${Button} small icon="sliders" label=${`Dials${Object.values(dials).filter(Boolean).length ? ` (${Object.values(dials).filter(Boolean).length})` : ''}`} ariaPressed=${showDials} onClick=${() => setShowDials(!showDials)} />
+            <span class="cs-spacer"></span>
+            <${Button} small icon="user-plus" label="Start from one of my characters…"
+                title="Bring in a SillyTavern character with its lorebook and sprites; the AI improves it and builds what it is missing" onClick=${openPullPicker} />
         </div>
         ${showDials && html`<div class="cs-grid">
             ${Object.entries(DIALS).map(([k, d]) => html`<${Select} key=${k} label=${d.label} value=${dials[k] ?? ''} options=${d.options.map(o => ({ value: o, label: o || 'AI decides' }))} onChange=${v => setDials({ ...dials, [k]: v })} />`)}
