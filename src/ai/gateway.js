@@ -97,6 +97,30 @@ function textFromRaw(ctx, raw, api) {
 }
 
 /**
+ * Send an already-assembled message list (roleplay playtests). Returns the model text.
+ * Chat Completion routes receive the messages as-is; Text Completion profiles format them with the profile's instruct template.
+ */
+export async function runChat(ctx, { messages, profileId = '', maxTokens = 400, signal }) {
+    const route = describeRoute(ctx, profileId);
+    if (!route.ok && route.mode === 'profile') throw new AiError(route.label, { meta: route });
+    const started = Date.now();
+    let text;
+    if (route.mode === 'profile') {
+        try {
+            const raw = await ctx.ConnectionManagerRequestService.sendRequest(profileId, messages, maxTokens, { stream: false, signal, extractData: false });
+            text = textFromRaw(ctx, raw, route.schemaEnforced ? 'openai' : 'textgenerationwebui');
+        } catch (e) {
+            throw new AiError(signal?.aborted ? 'Cancelled' : `Request failed: ${e?.cause?.message ?? e?.message}`, { meta: route, cause: e });
+        }
+    } else {
+        const gen = ctx.generateRaw({ prompt: messages, responseLength: maxTokens });
+        const abort = new Promise((_, rej) => signal?.addEventListener('abort', () => rej(new AiError('Cancelled', { meta: route })), { once: true }));
+        text = String(await Promise.race([gen, abort]));
+    }
+    return { text: String(text ?? '').replace(/<(think|thinking)>[\s\S]*?<\/\1>\s*/gi, '').trim(), meta: { ...route, durationMs: Date.now() - started } };
+}
+
+/**
  * Run one structured task.
  * @param {object} ctx SillyTavern context
  * @param {object} req
