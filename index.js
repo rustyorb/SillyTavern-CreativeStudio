@@ -19,6 +19,7 @@ async function openStudio(route) {
         await appModule.mountStudio(root, { route, onClose: closeStudio });
         root.classList.add('cs-open');
         document.body.classList.add('cs-studio-open');
+        setTopIcon(true);
     })().finally(() => { opening = null; });
     return opening;
 }
@@ -28,22 +29,51 @@ function closeStudio() {
     if (!root) return;
     root.classList.remove('cs-open');
     document.body.classList.remove('cs-studio-open');
+    setTopIcon(false);
     appModule?.unmountStudio(root);
 }
 
+function toggleStudio() {
+    const root = document.getElementById(ROOT_ID);
+    if (root?.classList.contains('cs-open')) closeStudio();
+    else openStudio();
+}
+
+/**
+ * A feather in SillyTavern's top bar, next to the Extensions icon. It uses ST's own .drawer / .drawer-icon look
+ * (dim until hovered) but not .drawer-toggle, so ST's drawer logic never treats it as a panel.
+ */
 function addLauncher() {
-    const menu = document.getElementById('extensionsMenu');
-    if (menu && !document.getElementById('cs-launch-menu')) {
-        const item = document.createElement('div');
-        item.id = 'cs-launch-menu';
-        item.className = 'list-group-item flex-container flexGap5 interactable';
-        item.tabIndex = 0;
-        item.title = 'Open Creative Studio (Ctrl+Shift+S)';
-        item.innerHTML = '<div class="fa-fw fa-solid fa-feather-pointed extensionsMenuExtensionButton"></div><span>Creative Studio</span>';
-        item.addEventListener('click', () => openStudio());
-        item.addEventListener('keydown', e => (e.key === 'Enter' || e.key === ' ') && openStudio());
-        menu.appendChild(item);
-    }
+    if (document.getElementById('cs-top-button')) return;
+    const holder = document.getElementById('top-settings-holder');
+    if (!holder) return;
+    const button = document.createElement('div');
+    button.id = 'cs-top-button';
+    button.className = 'drawer';
+    const icon = document.createElement('div');
+    icon.className = 'drawer-icon fa-solid fa-feather-pointed fa-fw closedIcon';
+    icon.title = 'Creative Studio (Ctrl+Shift+S)';
+    icon.setAttribute('role', 'button');
+    icon.setAttribute('aria-label', 'Open Creative Studio');
+    icon.tabIndex = 0;
+    icon.addEventListener('click', toggleStudio);
+    icon.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleStudio();
+        }
+    });
+    button.appendChild(icon);
+    const after = document.getElementById('extensions-settings-button');
+    if (after?.parentElement === holder) after.after(button);
+    else holder.appendChild(button);
+}
+
+function setTopIcon(open) {
+    const icon = document.querySelector('#cs-top-button .drawer-icon');
+    if (!icon) return;
+    icon.classList.toggle('openIcon', open);
+    icon.classList.toggle('closedIcon', !open);
 }
 
 function registerCommand() {
@@ -68,15 +98,13 @@ function registerCommand() {
 document.addEventListener('keydown', e => {
     if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
         e.preventDefault();
-        const root = document.getElementById(ROOT_ID);
-        if (root?.classList.contains('cs-open')) closeStudio();
-        else openStudio();
+        toggleStudio();
     }
 });
 
 addLauncher();
 registerCommand();
-// The extensions menu can be rebuilt; make sure the launcher survives.
+// In case the top bar is not built yet when the extension loads.
 globalThis.SillyTavern?.getContext?.().eventSource?.on?.('app_ready', addLauncher);
 
 globalThis.CreativeStudio = { open: openStudio, close: closeStudio, id: EXT_ID };

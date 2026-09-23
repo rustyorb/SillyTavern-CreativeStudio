@@ -63,7 +63,7 @@ You need **SillyTavern 1.19.0 or newer**. No server plugin, no build step, no `n
    ```
 
 3. Pick *Install just for me* or *for all users*. SillyTavern downloads it and reloads.
-4. Open it from the **wand menu → Creative Studio**, press **Ctrl + Shift + S**, or type `/studio`.
+4. Open it with the **feather** in SillyTavern's top bar (next to the Extensions icon), press **Ctrl + Shift + S**, or type `/studio`.
 
 That's it. It uses the AI connection you already have set up (see [Which AI?](#-which-ai-does-it-use)).
 
