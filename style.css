@@ -120,7 +120,8 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-studio .cs-textarea.cs-mono { font-family: var(--monoFontFamily); }
 .cs-num { max-width: 110px; }
 .cs-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
-.cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--cs-gap) 10px; align-items: end; }
+.cs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--cs-gap) 10px; align-items: start; }
+.cs-grid > .cs-toggle { align-self: center; }
 .cs-row { display: flex; gap: var(--cs-gap); align-items: center; flex-wrap: wrap; }
 .cs-row-between { display: flex; gap: var(--cs-gap); align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .cs-stack { display: flex; flex-direction: column; gap: 8px; }

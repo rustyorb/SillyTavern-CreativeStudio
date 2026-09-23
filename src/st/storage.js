@@ -40,8 +40,8 @@ export function createStorage(transport) {
         return transport.upload(name, b64);
     }
 
-    async function readIndex() {
-        if (indexMemo) return indexMemo;
+    async function readIndex(fresh = false) {
+        if (indexMemo && !fresh) return indexMemo;
         const idx = (await readJson(INDEX).catch(() => null)) ?? { projects: [], lastOpen: '' };
         if (!Array.isArray(idx.projects)) idx.projects = [];
         indexMemo = idx;
@@ -55,7 +55,7 @@ export function createStorage(transport) {
 
     return {
         async listProjects() {
-            const idx = await readIndex();
+            const idx = await readIndex(true);
             return [...idx.projects].sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
         },
 
@@ -89,25 +89,43 @@ export function createStorage(transport) {
             return id ? this.loadProject(id) : null;
         },
 
-        /** @returns {Promise<{where: 'server'|'browser', error?: string}>} */
-        async saveProject(project) {
+        /**
+         * @param {object} project
+         * @param {{ baseRevision?: string }} [opts] revision the caller last loaded/saved; a different server revision means another tab saved in between
+         * @returns {Promise<{where: 'server'|'browser', error?: string, revision?: string, conflict?: {snapshotId: string}}>}
+         */
+        async saveProject(project, { baseRevision } = {}) {
             const doc = clone(project);
             delete doc._loadedFrom;
+            doc.revision = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             if (cache) await cache.setItem(`project:${doc.id}`, doc).catch(() => {});
+            let conflict;
+            if (baseRevision !== undefined) {
+                const server = await readJson(projectFile(doc.id)).catch(() => null);
+                if (server && server.revision && server.revision !== baseRevision) {
+                    // Someone else (another tab/device) saved since we loaded: keep their version as a snapshot, then save ours.
+                    const snap = makeSnapshot(migrateProject(server), 'Concurrent edit from another tab (kept before overwrite)', 'conflict');
+                    await writeJson(snapshotFile(doc.id, snap.id), snap).catch(() => {});
+                    const idx = await readIndex(true);
+                    await writeIndex({ ...idx, projects: idx.projects.map(p => (p.id === doc.id ? { ...p, snapshots: [...(p.snapshots ?? []), { id: snap.id, time: snap.time, label: snap.label, kind: 'conflict', hash: snap.hash }].slice(-200) } : p)) });
+                    conflict = { snapshotId: snap.id };
+                }
+            }
             try {
                 await writeJson(projectFile(doc.id), doc);
-                const idx = await readIndex();
-                const entry = { id: doc.id, name: doc.name, modified: doc.modified, characters: doc.characters.length };
+                const idx = await readIndex(true);
+                const prev = idx.projects.find(p => p.id === doc.id) ?? {};
+                const entry = { ...prev, id: doc.id, name: doc.name, modified: doc.modified, characters: doc.characters.length };
                 const others = idx.projects.filter(p => p.id !== doc.id);
                 await writeIndex({ ...idx, projects: [...others, entry], lastOpen: doc.id });
-                return { where: 'server' };
+                return { where: 'server', revision: doc.revision, conflict };
             } catch (e) {
                 return { where: 'browser', error: e.message };
             }
         },
 
         async deleteProject(id) {
-            const idx = await readIndex();
+            const idx = await readIndex(true);
             const entry = idx.projects.find(p => p.id === id);
             await writeIndex({ ...idx, projects: idx.projects.filter(p => p.id !== id), lastOpen: idx.lastOpen === id ? '' : idx.lastOpen });
             // Deletion from the server is deliberate and reversible only via snapshots exported earlier.
@@ -119,7 +137,7 @@ export function createStorage(transport) {
         async saveSnapshot(project, label, kind = 'manual') {
             const snap = makeSnapshot(project, label, kind);
             await writeJson(snapshotFile(project.id, snap.id), snap);
-            const idx = await readIndex();
+            const idx = await readIndex(true);
             const projects = idx.projects.map(p => (p.id === project.id
                 ? { ...p, snapshots: [...(p.snapshots ?? []), { id: snap.id, time: snap.time, label, kind, hash: snap.hash }].slice(-200) }
                 : p));
@@ -128,7 +146,7 @@ export function createStorage(transport) {
         },
 
         async listSnapshots(projectId) {
-            const idx = await readIndex();
+            const idx = await readIndex(true);
             return [...(idx.projects.find(p => p.id === projectId)?.snapshots ?? [])].reverse();
         },
 

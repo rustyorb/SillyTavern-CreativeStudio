@@ -70,6 +70,8 @@ export async function createEnvironment() {
     let timer = null;
     let saving = null;
     let dirty = false;
+    let baseRevision;
+    let baseProjectId;
 
     const setSaveState = s => {
         saveState = s;
@@ -83,7 +85,11 @@ export async function createEnvironment() {
         if (!dirty && saveState.status !== 'error') return;
         dirty = false;
         setSaveState({ status: 'saving', label: 'Saving…' });
-        saving = storage.saveProject(store.get()).then(r => {
+        const current = store.get();
+        if (baseRevision === undefined || baseProjectId !== current.id) { baseRevision = current.revision ?? null; baseProjectId = current.id; }
+        saving = storage.saveProject(current, { baseRevision: baseRevision ?? undefined }).then(r => {
+            if (r.revision) baseRevision = r.revision;
+            if (r.conflict) toastListeners.forEach(l => l({ text: 'Another tab or device saved this project meanwhile. Their version was kept as a snapshot (Inspector → Snapshots) before saving yours.', kind: 'error', ms: 10000 }));
             if (r.where === 'server') setSaveState({ status: 'idle', label: 'Saved', detail: `Saved to SillyTavern user files at ${new Date().toLocaleTimeString()}` });
             else setSaveState({ status: 'error', label: 'Saved locally only', detail: `Server save failed (${r.error}); a copy is in this browser. Will retry on next change.` });
         }).catch(e => setSaveState({ status: 'error', label: 'Save failed', detail: e.message }))

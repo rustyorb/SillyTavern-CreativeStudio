@@ -510,8 +510,59 @@ function MetaTab({ store, env, project, ch, d, setData, setPath }) {
             <${Field} label="Modification date (V3)"><input type="datetime-local" class="text_pole cs-input" value=${fromUnix(d.modification_date)} onInput=${e => setData('modification_date', toUnix(e.currentTarget.value))} /></${Field}>
         </div>
         <${StringList} label="Source (V3)" items=${d.source ?? []} onChange=${v => setData('source', v.length ? v : undefined)} placeholder="https://…" hint="IDs or URLs where the card came from; append-only by convention. Not used by ST." />
+        <${ImagePrompts} store=${store} env=${env} project=${project} ch=${ch} />
         <${AssetsEditor} d=${d} setData=${setData} ch=${ch} project=${project} />
     `;
+}
+
+/** AI image prompts; optional generation through SillyTavern's Image Generation extension (/imagine). */
+function ImagePrompts({ store, env, project, ch }) {
+    const ai = useAiTask(store);
+    const [style, setStyle] = useState('');
+    const [busy, setBusy] = useState('');
+    const prompts = ch.imagePrompts ?? [];
+    let sdAvailable = false;
+    try { sdAvailable = !!globalThis.SillyTavern.getContext().SlashCommandParser.commands.imagine; } catch { /* ignore */ }
+    const media = project.media.filter(m => (ch.links?.media ?? []).includes(m.id) || m.id === ch.avatarMediaId);
+    const gen = async () => {
+        const r = await ai.run('media.prompts', { card: ch.card, style });
+        if (!r) return;
+        store.update(p => editArtifactField(p, 'characters', ch.id, 'imagePrompts', r.value.prompts.map(x => ({ ...x, model: r.generation.label })), { actor: 'ai', summary: 'AI image prompts' }), 'image prompts');
+    };
+    const render = async (pr, i) => {
+        setBusy(String(i));
+        try {
+            const neg = pr.negative ? ` negative=${JSON.stringify(pr.negative)}` : '';
+            const res = await globalThis.SillyTavern.getContext().executeSlashCommandsWithOptions(`/imagine quiet=true${neg} ${JSON.stringify(pr.prompt)}`, { handleParserErrors: false, handleExecutionErrors: false, source: 'creative-studio' });
+            const url = String(res?.pipe ?? '').trim();
+            if (!url) throw new Error('Image Generation returned nothing (check its settings).');
+            const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+            const { media: m, apply } = await saveMedia(env, store.get(), bytes, { name: `${ch.card.data.name} — ${pr.purpose}`, role: 'generated' });
+            m.prompt = pr.prompt;
+            m.sourceUrl = url;
+            store.update(p => editArtifactField(apply(p), 'characters', ch.id, 'links.media', [...(ch.links?.media ?? []), m.id], { summary: `Generated image (${pr.purpose})` }), 'generate image');
+        } catch (e) { env.toast(`Image generation failed: ${e.message}`, 'error', 7000); } finally { setBusy(''); }
+    };
+    return html`<${Section} title="Images" open=${prompts.length > 0 || media.length > 1}>
+        <div class="cs-row">
+            <input class="text_pole" style="flex:1" placeholder="Visual style (optional): e.g. painterly, muted palette" value=${style} onInput=${e => setStyle(e.currentTarget.value)} aria-label="Image style" />
+            <${Button} kind="ai" icon="wand-magic-sparkles" label="Write image prompts" onClick=${gen} disabled=${ai.busy} />
+        </div>
+        <${AiStatus} ai=${ai} />
+        ${prompts.map((pr, i) => html`<div key=${i} class="cs-proposal">
+            <div class="cs-proposal-head"><strong>${pr.purpose}</strong>
+                <div class="cs-row">
+                    <${Button} small icon="copy" label="Copy" onClick=${() => navigator.clipboard?.writeText(pr.prompt)} />
+                    ${sdAvailable && html`<${Button} small icon="image" label=${busy === String(i) ? 'Generating…' : 'Generate in SillyTavern'} onClick=${() => render(pr, i)} disabled=${!!busy} title="Uses the Image Generation extension and its configured source" />`}
+                </div></div>
+            <div class="cs-small">${pr.prompt}</div>${pr.negative && html`<div class="cs-small cs-muted">Negative: ${pr.negative}</div>`}
+        </div>`)}
+        ${!sdAvailable && prompts.length > 0 && html`<div class="cs-muted cs-small">Enable and configure SillyTavern's Image Generation extension to render these here, or paste them into any image tool.</div>`}
+        ${media.length > 0 && html`<div class="cs-row">${media.map(m => html`<figure key=${m.id} style="margin:0;width:120px">
+            <img src=${m.url} alt=${m.name} title=${m.prompt ?? m.name} style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid var(--cs-line)" />
+            ${m.id !== ch.avatarMediaId ? html`<${Button} small label="Use as avatar" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'avatarMediaId', m.id, { summary: 'Set avatar image' }), 'set avatar')} />` : html`<${Badge} kind="ok">avatar</${Badge}>`}
+        </figure>`)}</div>`}
+    </${Section}>`;
 }
 
 function AssetsEditor({ d, setData, ch, project }) {

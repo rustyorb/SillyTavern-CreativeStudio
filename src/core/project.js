@@ -197,7 +197,8 @@ export function acceptProposal(project, proposalId, revisedValue) {
     } else {
         p = upsertArtifact(p, prop.target.type, { ...clone(value), id: prop.target.id }, { action: 'replace', actor: 'ai', summary, proposalId });
     }
-    const siblingsSuperseded = prop.group
+    // Alternatives for the same field are superseded; "create" candidates (several concepts) stay open.
+    const siblingsSuperseded = prop.group && prop.target.id
         ? p.proposals.map(x => (x.group === prop.group && x.id !== prop.id && x.status === 'pending' && sameTarget(x, prop) ? { ...x, status: 'superseded', decided: now() } : x))
         : p.proposals;
     return {
