@@ -5,6 +5,7 @@ import {
     Modal, Toggle, Select, downloadBlob, pickFile, fileBytes, cx, useDebounced,
 } from '../kit.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
+import { isHandsFree } from '../proposals.js';
 import { findArtifact, editArtifactField, upsertArtifact, removeArtifact, logHistory } from '../../core/project.js';
 import { newSet, addQr, importQrJson, lintSet, QR_FLAGS } from '../../core/qr.js';
 import { analyze, isSideEffectFree, EFFECT } from '../../core/stscript.js';
@@ -46,6 +47,10 @@ export function ScriptsArea(props) {
             }
         } catch (e) { env.toast(`Import failed: ${e.message}`, 'error', 7000); }
     };
+    const openGen = () => {
+        if (!set) addSet(newQrSetArtifact(project.brief?.title || project.name || 'Story tools'), 'New QR set');
+        setGenOpen(true);
+    };
     return html`<div class="cs-area-head">
             <h3><${Icon} name="terminal" /> Quick Replies & STscript</h3>
             ${project.qrSets.length > 1 && html`<select class="text_pole" style="width:auto" value=${set?.id} onChange=${e => select('qrSets', e.currentTarget.value)} aria-label="Quick Reply set">
@@ -54,10 +59,13 @@ export function ScriptsArea(props) {
             <${Button} icon="plus" label="New set" onClick=${() => addSet(newQrSetArtifact('New set'), 'New QR set')} />
             <${Button} icon="file-import" label="Import…" title="QR set (v1 or v2) or a single .qr.json" onClick=${importFile} />
             <${Button} icon="plug" label="From SillyTavern…" onClick=${() => setStPicker(true)} />
-            <${Button} kind="ai" icon="wand-magic-sparkles" label="Generate…" onClick=${() => setGenOpen(true)} disabled=${!set} />
+            <${Button} kind="ai" icon="wand-magic-sparkles" label="Generate…" onClick=${openGen} />
         </div>
         <div class="cs-area-body">
-            ${set ? html`<${SetEditor} ...${props} set=${set} key=${set.id} />` : html`<${Empty} icon="terminal" title="No Quick Reply sets">Create a set, import one, pull one from SillyTavern, or generate scripts from a goal.</${Empty}>`}
+            ${set ? html`<${SetEditor} ...${props} set=${set} key=${set.id} />` : html`<${Empty} icon="terminal" title="No Quick Reply sets">
+                <div>Let the AI write buttons for you: dice, time skips, recaps, plot twists…</div>
+                <div class="cs-row" style="justify-content:center;margin-top:8px"><${Button} kind="ai" icon="wand-magic-sparkles" label="Generate Quick Replies" onClick=${openGen} /></div>
+            </${Empty}>`}
         </div>
         ${stPicker && html`<${StQrPicker} env=${env} onClose=${() => setStPicker(false)} onPicked=${(name, data) => {
             setStPicker(false);
@@ -285,40 +293,69 @@ function RunDialog({ qr, analysis, live, state, setState, store, set }) {
 
 // ------------------------------------------------------------------------------------------ AI
 
+/** One-click goals for common roleplay helpers. */
+const QR_RECIPES = [
+    { label: 'Dice roll', goal: "A 'Roll' button that rolls 1d20 and posts the result as a narrator (/sys) message." },
+    { label: 'Time skip', goal: "A 'Time skip' button that asks how much time passes (/input), posts a short narrator note, then triggers the AI to continue." },
+    { label: 'Scene summary', goal: "A 'Recap' button that uses /gen to write a 3-sentence summary of the recent scene and shows it in a popup without adding it to the chat." },
+    { label: 'Draft my reply', goal: "A 'Draft' button that asks the AI to write {{user}}'s next message in character and puts it in the input box without sending it." },
+    { label: 'Turn counter', goal: "A hidden Quick Reply that runs after every AI message and increments a chat variable 'turn', plus a 'Status' button that shows the turn count." },
+    { label: 'Nudge the plot', goal: "A 'Twist' button that injects a one-time system note asking the AI to introduce a surprising but fitting complication in its next reply, then triggers generation." },
+];
+
 function GenerateQr({ store, env, project, set, onClose }) {
     const [goal, setGoal] = useState('');
     const ai = useAiTask(store);
     const [result, setResult] = useState(null);
     const [keep, setKeep] = useState(new Set());
     const reg = useMemo(() => commandRegistry(), []);
-    const run = async () => {
+    const story = project.brief?.logline || (project.premise ? project.premise.slice(0, 300) : '');
+    const recipes = story ? [{ label: 'Helpers for this story', goal: `Three to five Quick Replies that make this roleplay more fun to play (story tools, not generic chat utilities). The story: ${story}` }, ...QR_RECIPES] : QR_RECIPES;
+    const run = async (g = goal) => {
+        if (!g.trim()) return;
+        setGoal(g);
         const core = ['echo', 'setvar', 'getvar', 'addvar', 'incvar', 'decvar', 'setglobalvar', 'getglobalvar', 'let', 'var', 'if', 'while', 'times', 'run', 'pass', 'abort', 'break', 'gen', 'genraw', 'trigger', 'send', 'sendas', 'sys', 'inject', 'input', 'buttons', 'popup', 'setinput', 'len', 'add', 'sub', 'rand', 'split', 'join', 'replace', 'createentry', 'setentryfield', 'findentry', 'getentryfield', 'qr-create', 'char-get'];
         const commands = core.filter(c => !reg.allNames.size || reg.allNames.has(c)).map(c => {
             const dd = describeCommand(reg.byName.get(c));
             return dd ? `/${c} ${dd.named.map(a => `${a.name}=${a.required ? '(req)' : ''}`).join(' ')} — ${dd.help.slice(0, 90)}` : `/${c}`;
         }).join('\n');
         const existing = set.data.qrList.map(q => `${q.label}: ${q.message.slice(0, 200)}`).join('\n');
-        const r = await ai.run('stscript.generate', { goal, commands, existing });
+        const r = await ai.run('stscript.generate', { goal: g, commands, existing });
         if (!r) return;
+        if (isHandsFree(store.get())) {
+            // Hands-free: scripts are only added (never run); those SillyTavern's parser accepts go straight in.
+            const good = new Set(r.value.quickReplies.map((q, i) => (parseLive(q.message).ok !== false ? i : -1)).filter(i => i >= 0));
+            if (good.size) accept(r, good, good.size === r.value.quickReplies.length);
+            if (good.size < r.value.quickReplies.length) {
+                setResult({ ...r, value: { ...r.value, quickReplies: r.value.quickReplies.filter((_, i) => !good.has(i)) } });
+                setKeep(new Set());
+                env.toast(`Added ${good.size}; ${r.value.quickReplies.length - good.size} did not parse and need a look.`, '', 7000);
+            }
+            return;
+        }
         setResult(r);
         setKeep(new Set(r.value.quickReplies.map((_, i) => i)));
     };
-    const accept = () => {
-        let s = set.data;
-        for (const [i, g] of result.value.quickReplies.entries()) {
-            if (!keep.has(i)) continue;
+    const accept = (res = result, keepSet = keep, close = true) => {
+        let s = store.get().qrSets.find(x => x.id === set.id)?.data ?? set.data;
+        for (const [i, g] of res.value.quickReplies.entries()) {
+            if (!keepSet.has(i)) continue;
             const props = { label: g.label, title: g.title ?? g.explanation ?? '', message: g.message, isHidden: !!g.isHidden, automationId: g.automationId ?? '' };
             for (const [k] of QR_FLAGS) if (g[k]) props[k] = true;
             s = addQr(s, props).set;
         }
-        store.update(p => logHistory(editArtifactField(p, 'qrSets', set.id, 'data', s, { actor: 'ai', summary: `Added ${keep.size} AI Quick Reply(s)` }), { actor: 'ai', action: 'ai-accept', target: { type: 'qrSets', id: set.id }, summary: `Accepted AI scripts from ${result.generation.label}` }), 'accept AI QRs');
-        onClose();
+        store.update(p => logHistory(editArtifactField(p, 'qrSets', set.id, 'data', s, { actor: 'ai', summary: `Added ${keepSet.size} AI Quick Reply(s)` }), { actor: 'ai', action: 'ai-accept', target: { type: 'qrSets', id: set.id }, summary: `Accepted AI scripts from ${res.generation.label}` }), 'accept AI QRs');
+        if (close) {
+            env.toast(`Added ${keepSet.size} Quick Reply button(s) to “${set.name}”`, 'ok');
+            onClose();
+        }
     };
     const reg2 = reg.allNames.size ? reg.allNames : null;
     return html`<${Modal} title=${`Generate Quick Replies for “${set.name}”`} onClose=${onClose} wide footer=${html`<${AiStatus} ai=${ai} /><${Button} label="Close" onClick=${onClose} />
-        ${result ? html`<${Button} kind="primary" icon="check" label=${`Add ${keep.size}`} onClick=${accept} disabled=${!keep.size} />` : html`<${Button} kind="ai" icon="wand-magic-sparkles" label="Generate" onClick=${run} disabled=${ai.busy || !goal.trim()} />`}`}>
+        ${result ? html`<${Button} kind="primary" icon="check" label=${`Add ${keep.size}`} onClick=${() => accept()} disabled=${!keep.size} />` : html`<${Button} kind="ai" icon="wand-magic-sparkles" label="Generate" onClick=${() => run()} disabled=${ai.busy || !goal.trim()} />`}`}>
         <${CreationRoute} store=${store} project=${project} />
-        <${TextArea} label="Goal" value=${goal} onChange=${setGoal} rows=${3} stats=${false} placeholder="e.g. A 'Roll d20' button that echoes the result and stores it in a chat variable; a hidden QR that tracks the scene number after each AI message." />
+        <div class="cs-row cs-small"><span class="cs-muted">One click:</span>${recipes.map(r => html`<${Button} small key=${r.label} kind="ai" label=${r.label} title=${r.goal} onClick=${() => run(r.goal)} disabled=${ai.busy} />`)}</div>
+        <${TextArea} label="Or describe your own" value=${goal} onChange=${setGoal} rows=${3} stats=${false} placeholder="e.g. A 'Roll d20' button that echoes the result and stores it in a chat variable; a hidden QR that tracks the scene number after each AI message." />
         ${result && result.value.quickReplies.map((g, i) => {
             const a = analyze(g.message, { knownCommands: reg2 });
             const p = parseLive(g.message);

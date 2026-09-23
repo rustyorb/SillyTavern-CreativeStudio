@@ -5,6 +5,7 @@ import { createStore, useStore } from './store.js';
 import { createProject } from '../core/project.js';
 import { Workspace, AREA_FOR_TYPE } from './workspace.js';
 import { Palette } from './palette.js';
+import { isHandsFree } from './proposals.js';
 
 let store = null;
 let studioEnv = null;
@@ -57,6 +58,11 @@ function Studio({ store, env, initialRoute, onClose }) {
     }), [env]);
 
     const pending = project.proposals.filter(p => p.status === 'pending').length;
+    const handsFree = isHandsFree(project);
+    const toggleMode = () => {
+        store.update(p => ({ ...p, settings: { ...p.settings, aiMode: handsFree ? 'review' : 'auto' } }), 'AI mode');
+        env.toast(handsFree ? 'Review mode: AI output now waits for your OK in the inspector.' : 'Hands-free: the AI writes straight into the project. Ctrl+Z undoes any change.', 'ok', 5000);
+    };
     const inspectorOpen = inspectorMode === 'open' || (inspectorMode === 'auto' && pending > 0);
     const setInspectorOpen = v => setInspectorMode((typeof v === 'function' ? v(inspectorOpen) : v) ? 'open' : 'closed');
     const openInspectorAt = tab => { setInspector(tab); setInspectorMode('open'); };
@@ -99,6 +105,11 @@ function Studio({ store, env, initialRoute, onClose }) {
                 </button>`)}
             </nav>
             <div class="cs-topbar-right">
+                <button class=${cx('cs-mode', handsFree ? 'is-auto' : 'is-review')} onClick=${toggleMode}
+                    title=${handsFree ? 'Hands-free: AI writes straight into your project (every change is undoable and logged). Click to review AI output before it lands.' : 'Review: AI output waits as proposals you accept or reject. Click to let the AI write directly.'}
+                    aria-pressed=${handsFree}>
+                    <${Icon} name=${handsFree ? 'bolt' : 'list-check'} /><span>${handsFree ? 'Hands-free' : 'Review'}</span>
+                </button>
                 <${Button} small icon="magnifying-glass" title="Command palette (Ctrl+K)" onClick=${() => setPaletteOpen(true)} />
                 <${Button} small icon="rotate-left" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
                 <${Button} small icon="rotate-right" title=${store.canRedo() ? `Redo: ${store.peekRedo()} (Ctrl+Y)` : 'Nothing to redo'} disabled=${!store.canRedo()} onClick=${() => store.redo()} />

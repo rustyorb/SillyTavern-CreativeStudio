@@ -135,7 +135,7 @@ export function PlaytestArea({ store, env, project, select }) {
                         <div class="cs-small ${route.ok ? 'cs-muted' : 'cs-err-text'}">${route.label}. The sandbox builds the prompt from project artifacts (card, linked lore activation, preset prompts, prompt-stage regex); it does not touch SillyTavern chats.</div>
                         <div class="cs-row"><${Button} kind="primary" icon="play" label=${run ? 'Restart' : 'Start playtest'} onClick=${start} disabled=${!ch || busy} /></div>
                     </${Section}>
-                    <${ScenarioEditor} scenarios=${scenarios} setScenarios=${setScenarios} scenarioId=${scenarioId} setScenarioId=${setScenarioId} characterId=${characterId} />
+                    <${ScenarioEditor} store=${store} ch=${ch} scenarios=${scenarios} setScenarios=${setScenarios} scenarioId=${scenarioId} setScenarioId=${setScenarioId} characterId=${characterId} />
                 </div>
                 <div class="cs-stack">
                     ${run ? html`<${Section} title=${`Conversation · ${run.transcript.length} messages`} right=${html`<${Button} small icon="floppy-disk" label="Save run" onClick=${save} disabled=${busy} />`}>
@@ -180,15 +180,24 @@ function Composer({ busy, onSend, onAuto, onScenario, onCancel }) {
     </div>`;
 }
 
-function ScenarioEditor({ scenarios, setScenarios, scenarioId, setScenarioId, characterId }) {
+function ScenarioEditor({ store, ch, scenarios, setScenarios, scenarioId, setScenarioId, characterId }) {
     const cur = scenarios.find(s => s.id === scenarioId);
     const set = patch => setScenarios(scenarios.map(s => (s.id === scenarioId ? { ...s, ...patch } : s)));
-    return html`<${Section} title=${`Scenarios (${scenarios.length})`} right=${html`<${Button} small icon="plus" label="Scenario" onClick=${() => { const s = newScenario(`Scenario ${scenarios.length + 1}`, characterId); setScenarios([...scenarios, s]); setScenarioId(s.id); }} />`}>
+    const ai = useAiTask(store);
+    const invent = async () => {
+        const r = await ai.run('playtest.scenarios', { card: ch.card, count: 3 });
+        if (!r) return;
+        const made = r.value.scenarios.map(x => ({ ...newScenario(x.name, characterId), userTurns: (x.userTurns ?? []).filter(t => String(t).trim()), notes: x.lookFor ?? '', model: r.generation.label }));
+        setScenarios([...(store.get().playtestScenarios ?? []), ...made]);
+        setScenarioId(made[0]?.id ?? scenarioId);
+    };
+    return html`<${Section} title=${`Scenarios (${scenarios.length})`} right=${html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Invent 3" title="AI designs short playtests that probe voice, conflict, lore recall and pacing" onClick=${invent} disabled=${ai.busy || !ch} /><${Button} small icon="plus" label="Scenario" onClick=${() => { const s = newScenario(`Scenario ${scenarios.length + 1}`, characterId); setScenarios([...scenarios, s]); setScenarioId(s.id); }} />`}>
         ${scenarios.length ? html`<div class="cs-row">${scenarios.map(s => html`<${Button} small key=${s.id} label=${s.name} ariaPressed=${s.id === scenarioId} onClick=${() => setScenarioId(s.id)} />`)}</div>` : html`<div class="cs-muted cs-small">Scenarios are scripted user turns you can replay against different versions of the card, lore or preset.</div>`}
         ${cur && html`<${TextInput} label="Name" value=${cur.name} onChange=${v => set({ name: v })} />
             <${TextArea} label="User turns (one per line)" value=${cur.userTurns.join('\n')} onChange=${v => set({ userTurns: v.split('\n').filter(x => x.trim()) })} rows=${5} stats=${false} />
             <${TextArea} label="What to look for" value=${cur.notes} onChange=${v => set({ notes: v })} rows=${2} stats=${false} />
             <${Button} small icon="trash" kind="danger" label="Delete scenario" onClick=${() => { setScenarios(scenarios.filter(s => s.id !== scenarioId)); setScenarioId(''); }} />`}
+        <${AiStatus} ai=${ai} />
     </${Section}>`;
 }
 

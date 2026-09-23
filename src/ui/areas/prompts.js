@@ -10,6 +10,7 @@ import { findArtifact, editArtifactField, upsertArtifact, removeArtifact, logHis
 import {
     KINDS, MARKERS, detectKind, splitMaster, normalizeCc, ccOrder, setCcOrder, newCustomPrompt, markerKind, lintCc, assembleCc,
     sceneFromCard, diffCc, emptyCcPreset, stripSensitive, INSTRUCT_DEFAULT, CONTEXT_DEFAULT, SYSPROMPT_DEFAULT, REASONING_DEFAULT, TRIGGERS,
+    mergeGeneratedPrompts,
 } from '../../core/preset.js';
 import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
 import { jsonDiff } from '../../core/diff.js';
@@ -92,6 +93,28 @@ function PromptsHome(props) {
         ${genOpen && html`<${GenerateModal} ...${props} onClose=${() => setGenOpen(false)} />`}`;
 }
 
+/** Goals written from the project itself, so the author never has to describe a preset. */
+function projectGoals(project) {
+    const c = project.characters[0]?.card?.data;
+    const b = project.brief;
+    const parts = [
+        'A high-quality immersive roleplay preset for this project: vivid, grounded prose; the character stays in voice; never speak or act for {{user}}; move scenes forward with concrete choices.',
+        b?.logline && `Story: ${b.logline}`,
+        b?.tone && `Tone: ${b.tone}`,
+        !b && project.premise && `Premise: ${project.premise.slice(0, 600)}`,
+        c?.name && `Main character: ${c.name}. ${String(c.description ?? '').slice(0, 400)}`,
+    ].filter(Boolean);
+    return parts.length > 1 ? parts.join('\n') : 'A strong, general-purpose immersive roleplay preset: vivid, grounded prose; characters stay in voice; never speak or act for {{user}}; keep scenes moving.';
+}
+
+function linkPreset(store, characterId, presetId) {
+    store.update(p => {
+        const c = findArtifact(p, 'characters', characterId);
+        if (!c || (c.links?.presets ?? []).includes(presetId)) return p;
+        return editArtifactField(p, 'characters', characterId, 'links.presets', [...(c.links?.presets ?? []), presetId], { summary: 'Linked preset' });
+    }, 'link preset');
+}
+
 function StPresetPicker({ env, onClose, onPicked }) {
     const [kind, setKind] = useState('cc');
     let names = [];
@@ -115,78 +138,55 @@ function GenerateModal({ store, env, project, select, onClose }) {
     const [target, setTarget] = useState('');
     const ai = useAiTask(store);
     const ccPresets = project.presets.filter(p => p.kind === 'cc');
+    const derived = projectGoals(project);
     const run = async () => {
+        const g = goals.trim() || derived;
         if (mode === 'cc') {
             const base = target ? findArtifact(project, 'presets', target) : null;
             const existing = base ? ccOrder(base.data).filter(o => o.enabled).map(o => base.data.prompts.find(p => p.identifier === o.identifier)).filter(p => p && !p.marker && p.content).map(p => `[${p.name}] ${p.content.slice(0, 300)}`).join('\n') : '';
-            const r = await ai.run('preset.generate-cc', { goals, samples, model, existing });
+            const r = await ai.run('preset.generate-cc', { goals: g, samples, model, existing });
             if (!r) return;
-            const art = base ?? newPresetArtifact('cc', `Generated: ${goals.slice(0, 40) || 'preset'}`);
+            const art = base ?? newPresetArtifact('cc', goals.trim() ? `Generated: ${goals.trim().slice(0, 40)}` : `${project.name} preset`);
             if (!base) store.update(p => upsertArtifact(p, 'presets', art, { action: 'create', summary: 'New preset for AI prompts' }), 'create preset');
             const merged = mergeGeneratedPrompts(art.data, r.value);
-            pushProposals(store, [{
+            const accepted = pushProposals(store, [{
                 task: 'preset.generate-cc', title: `${r.value.prompts.length} prompts${r.value.sampler ? ' + samplers' : ''} for ${art.name}`,
                 target: { type: 'presets', id: art.id, path: 'data' }, after: merged.preset,
                 rationale: `${r.value.rationale}${r.value.model_assumptions ? `\nModel assumptions: ${r.value.model_assumptions}` : ''}`, generation: r.generation,
                 group: null,
             }], 'AI preset');
-            store.update(p => editArtifactField(p, 'presets', art.id, 'pendingGenerated', merged.meta, { summary: 'AI generated prompts pending' }), 'pending meta');
+            if (accepted.length) {
+                if (!base && project.characters.length === 1) linkPreset(store, project.characters[0].id, art.id);
+                env.toast(`Wrote ${r.value.prompts.length} prompts into ${art.name}`, 'ok');
+            } else {
+                store.update(p => editArtifactField(p, 'presets', art.id, 'pendingGenerated', merged.meta, { summary: 'AI generated prompts pending' }), 'pending meta');
+            }
             select('presets', art.id);
             onClose();
         } else {
-            const r = await ai.run('preset.generate-tc', { goals, model });
+            const r = await ai.run('preset.generate-tc', { goals: g, model });
             if (!r) return;
             const sp = { ...newPresetArtifact('sysprompt', `Generated system prompt`), data: { name: 'Generated system prompt', content: r.value.system_prompt, post_history: '' } };
-            pushProposals(store, [{ task: 'preset.generate-tc', title: 'New system prompt', target: { type: 'presets', id: null }, after: sp, rationale: `${r.value.rationale}\nInstruct family: ${r.value.instruct_family ?? '?'}\nStory string: ${r.value.story_string_notes ?? ''}\nStop strings: ${(r.value.stop_strings ?? []).join(', ')}`, generation: r.generation }], 'AI TC');
-            env.toast('Proposal ready in the inspector', 'ok');
+            const accepted = pushProposals(store, [{ task: 'preset.generate-tc', title: 'New system prompt', target: { type: 'presets', id: null }, after: sp, rationale: `${r.value.rationale}\nInstruct family: ${r.value.instruct_family ?? '?'}\nStory string: ${r.value.story_string_notes ?? ''}\nStop strings: ${(r.value.stop_strings ?? []).join(', ')}`, generation: r.generation }], 'AI TC');
+            if (accepted.length) {
+                env.toast(`Created a system prompt${r.value.instruct_family ? ` (use the ${r.value.instruct_family} instruct template)` : ''}`, 'ok', 7000);
+                select('presets', sp.id);
+            } else env.toast('Proposal ready in the inspector', 'ok');
             onClose();
         }
     };
     return html`<${Modal} title="Generate prompts from goals" onClose=${onClose} wide
-        footer=${html`<${AiStatus} ai=${ai} /><${Button} label="Close" onClick=${onClose} /><${Button} kind="ai" icon="wand-magic-sparkles" label="Generate" onClick=${run} disabled=${ai.busy || !goals.trim()} />`}>
+        footer=${html`<${AiStatus} ai=${ai} /><${Button} label="Close" onClick=${onClose} /><${Button} kind="ai" icon="wand-magic-sparkles" label="Generate" onClick=${run} disabled=${ai.busy} />`}>
         <div class="cs-row"><${Button} small label="Chat Completion prompts" ariaPressed=${mode === 'cc'} onClick=${() => setMode('cc')} /><${Button} small label="Text Completion system prompt" ariaPressed=${mode === 'tc'} onClick=${() => setMode('tc')} /></div>
         <${CreationRoute} store=${store} project=${project} />
-        <${TextArea} label="Goals" value=${goals} onChange=${setGoals} rows=${5} stats=${false} placeholder="What should the model do? Prose style, POV, pacing, length, formatting, what to avoid, how to handle {{user}}…" />
+        <${TextArea} label="Goals (optional)" value=${goals} onChange=${setGoals} rows=${5} stats=${false}
+            placeholder=${derived ? `Leave empty and the AI writes a preset that fits this project (${project.name}). Or describe what you want: prose style, POV, pacing, length, formatting…` : 'Leave empty for a strong general roleplay preset, or describe what you want: prose style, POV, pacing, length, formatting, what to avoid…'} />
         <${TextArea} label="Sample outputs with notes (optional)" value=${samples} onChange=${setSamples} rows=${5} stats=${false} placeholder="Paste replies you liked or disliked and say why." />
         <div class="cs-grid">
             <${TextInput} label="Target model (optional)" value=${model} onChange=${setModel} placeholder="e.g. Claude, GPT-5, Mistral Small, Qwen3" />
             ${mode === 'cc' && html`<${Select} label="Add to" value=${target} options=${[{ value: '', label: 'A new preset' }, ...ccPresets.map(p => ({ value: p.id, label: p.name }))]} onChange=${setTarget} />`}
         </div>
     </${Modal}>`;
-}
-
-/** Merge AI-generated prompts into a CC preset copy. Returns preset + per-prompt metadata for selective acceptance. */
-export function mergeGeneratedPrompts(data, gen) {
-    const preset = clone(data);
-    const order = [...ccOrder(preset)];
-    const meta = [];
-    const insertAfter = (anchor, id) => {
-        const i = order.findIndex(o => o.identifier === anchor);
-        order.splice(i >= 0 ? i + 1 : order.length, 0, { identifier: id, enabled: true });
-    };
-    const insertBefore = (anchor, id) => {
-        const i = order.findIndex(o => o.identifier === anchor);
-        order.splice(i >= 0 ? i : 0, 0, { identifier: id, enabled: true });
-    };
-    for (const g of gen.prompts ?? []) {
-        if (g.placement === 'main' || g.placement === 'post-history') {
-            const id = g.placement === 'main' ? 'main' : 'jailbreak';
-            const p = preset.prompts.find(x => x.identifier === id);
-            if (p) { p.content = g.content; p.role = g.role ?? p.role; }
-            if (!order.some(o => o.identifier === id)) insertAfter(id === 'main' ? '' : 'chatHistory', id);
-            else order.forEach(o => { if (o.identifier === id) o.enabled = true; });
-            meta.push({ identifier: id, name: p?.name ?? id, placement: g.placement, purpose: g.purpose ?? '', replaced: true });
-            continue;
-        }
-        const np = { ...newCustomPrompt(g.name), role: g.role ?? 'system', content: g.content, injection_position: g.placement === 'in-chat' ? 1 : 0, injection_depth: g.depth ?? 4 };
-        preset.prompts.push(np);
-        if (g.placement === 'before-char') insertBefore('charDescription', np.identifier);
-        else if (g.placement === 'after-char') insertAfter('scenario', np.identifier);
-        else insertBefore('chatHistory', np.identifier);
-        meta.push({ identifier: np.identifier, name: g.name, placement: g.placement, purpose: g.purpose ?? '', depth: g.depth });
-    }
-    if (gen.sampler) for (const [k, v] of Object.entries(gen.sampler)) if (v != null) preset[k] = v;
-    return { preset: setCcOrder(preset, order), meta: { prompts: meta, sampler: gen.sampler ?? null } };
 }
 
 // ======================================================================================= profiles

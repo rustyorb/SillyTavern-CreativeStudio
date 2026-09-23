@@ -62,6 +62,14 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-area:hover { color: var(--cs-fg); background: var(--cs-faint); }
 .cs-area.active { color: var(--cs-fg); border-color: var(--cs-line); background: var(--cs-faint); }
 .cs-topbar-right { display: flex; gap: 4px; align-items: center; }
+.cs-mode {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; cursor: pointer;
+    font: inherit; font-size: 0.85em; font-weight: 600; white-space: nowrap;
+    border: 1px solid var(--cs-line); background: transparent; color: var(--cs-dim);
+}
+.cs-mode.is-auto { color: var(--cs-accent); border-color: color-mix(in srgb, var(--cs-accent) 55%, transparent); background: color-mix(in srgb, var(--cs-accent) 10%, transparent); }
+.cs-mode:hover { border-color: var(--cs-accent); }
+.cs-mode:focus-visible { outline: 2px solid var(--cs-accent); outline-offset: 1px; }
 .cs-save { font-size: 0.85em; padding: 2px 6px; border-radius: 4px; white-space: nowrap; color: var(--cs-dim); }
 .cs-save-dirty { color: var(--cs-warn); }
 .cs-save-error { color: var(--cs-err); }
@@ -351,3 +359,17 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-palette { width: min(640px, 100%); margin-top: -20vh; padding: 8px; gap: 6px; }
 .cs-palette-input { width: 100%; font-size: 1.05em; }
 .cs-palette .cs-list { max-height: 50vh; overflow: auto; }
+
+/* --- Generator --- */
+.cs-generator { border: 1px solid color-mix(in srgb, var(--cs-em) 50%, var(--cs-line)); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: color-mix(in srgb, var(--cs-em) 5%, var(--cs-bg)); }
+.cs-gen-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-gen-head h3 { margin: 0; font-size: 1.15em; display: flex; gap: 8px; align-items: center; }
+.cs-studio .cs-gen-idea { font-size: 1.05em; }
+.cs-gen-run { border-top: 1px solid var(--cs-line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.cs-gen-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 12px; }
+.cs-gen-step { display: flex; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 4px; }
+.cs-gen-step.is-done > span:first-child { color: var(--cs-ok); }
+.cs-gen-step.is-running { background: color-mix(in srgb, var(--cs-accent) 14%, transparent); }
+.cs-gen-step.is-running > span:first-child { color: var(--cs-accent); }
+.cs-gen-step.is-failed > span:first-child, .cs-gen-step.is-blocked > span:first-child { color: var(--cs-err); }
+.cs-gen-step.is-skipped, .cs-gen-step.is-pending { color: var(--cs-dim); }

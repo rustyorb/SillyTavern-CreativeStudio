@@ -337,3 +337,37 @@ export function assembleTcFallback({ context, instruct, sysprompt }, scene) {
     parts.push(`${ins.last_output_sequence || ins.output_sequence}${nl}${scene.char}:`);
     return parts.join('');
 }
+
+/** Merge AI-generated prompts into a CC preset copy. Returns preset + per-prompt metadata for selective acceptance. */
+export function mergeGeneratedPrompts(data, gen) {
+    const preset = clone(data);
+    const order = [...ccOrder(preset)];
+    const meta = [];
+    const insertAfter = (anchor, id) => {
+        const i = order.findIndex(o => o.identifier === anchor);
+        order.splice(i >= 0 ? i + 1 : order.length, 0, { identifier: id, enabled: true });
+    };
+    const insertBefore = (anchor, id) => {
+        const i = order.findIndex(o => o.identifier === anchor);
+        order.splice(i >= 0 ? i : 0, 0, { identifier: id, enabled: true });
+    };
+    for (const g of gen.prompts ?? []) {
+        if (g.placement === 'main' || g.placement === 'post-history') {
+            const id = g.placement === 'main' ? 'main' : 'jailbreak';
+            const p = preset.prompts.find(x => x.identifier === id);
+            if (p) { p.content = g.content; p.role = g.role ?? p.role; }
+            if (!order.some(o => o.identifier === id)) insertAfter(id === 'main' ? '' : 'chatHistory', id);
+            else order.forEach(o => { if (o.identifier === id) o.enabled = true; });
+            meta.push({ identifier: id, name: p?.name ?? id, placement: g.placement, purpose: g.purpose ?? '', replaced: true });
+            continue;
+        }
+        const np = { ...newCustomPrompt(g.name), role: g.role ?? 'system', content: g.content, injection_position: g.placement === 'in-chat' ? 1 : 0, injection_depth: g.depth ?? 4 };
+        preset.prompts.push(np);
+        if (g.placement === 'before-char') insertBefore('charDescription', np.identifier);
+        else if (g.placement === 'after-char') insertAfter('scenario', np.identifier);
+        else insertBefore('chatHistory', np.identifier);
+        meta.push({ identifier: np.identifier, name: g.name, placement: g.placement, purpose: g.purpose ?? '', depth: g.depth });
+    }
+    if (gen.sampler) for (const [k, v] of Object.entries(gen.sampler)) if (v != null) preset[k] = v;
+    return { preset: setCcOrder(preset, order), meta: { prompts: meta, sampler: gen.sampler ?? null } };
+}

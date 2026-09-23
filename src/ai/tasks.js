@@ -10,7 +10,7 @@ const CRAFT = `You are a collaborator for a SillyTavern roleplay author. Write f
 - Keep {{char}} and {{user}} macros where a card would use them. Never write {{user}}'s actions, thoughts or dialogue in greetings or examples beyond a minimal hook.
 - Respect the author's stated premise, tone, rating and constraints exactly; if something is ambiguous, choose the most interesting reading and say so in the rationale.`;
 
-function cardDigest(card, { full = false } = {}) {
+export function cardDigest(card, { full = false } = {}) {
     const d = card?.data ?? {};
     const cut = (s, n) => (full || !s || s.length <= n ? s ?? '' : `${s.slice(0, n)}…`);
     return [
@@ -26,6 +26,22 @@ function cardDigest(card, { full = false } = {}) {
         d.post_history_instructions ? `Post-history instructions:\n${cut(d.post_history_instructions, 800)}` : '',
         d.creator_notes ? `Creator notes:\n${cut(d.creator_notes, 800)}` : '',
     ].filter(Boolean).join('\n\n');
+}
+
+/** Human-readable generation dials (shared by whole-project generation and per-area generators). */
+export const DIALS = {
+    genre: { label: 'Genre', options: ['', 'fantasy', 'science fiction', 'modern / slice of life', 'mystery / noir', 'horror', 'romance', 'historical', 'post-apocalyptic', 'comedy', 'cyberpunk', 'mythic / folklore'] },
+    tone: { label: 'Tone', options: ['', 'cozy', 'dramatic', 'dark', 'lighthearted', 'tense', 'melancholic', 'whimsical', 'gritty'] },
+    rating: { label: 'Content rating', options: ['', 'SFW', 'mature themes, no explicit content', 'unrestricted (the model decides)'] },
+    pov: { label: 'Narration', options: ['', 'third person, past tense', 'second person ("you")', 'first person (character narrates)'] },
+    length: { label: 'Reply length', options: ['', 'short (1-2 paragraphs)', 'medium (2-4 paragraphs)', 'long (4+ paragraphs)'] },
+    cardType: { label: 'Card type', options: ['', 'single character', 'narrator / multi-character scenario'] },
+    model: { label: 'Target model (for the preset)', options: ['', 'Claude', 'GPT', 'Gemini', 'DeepSeek', 'Mistral', 'Llama', 'Qwen', 'a small local model'] },
+};
+
+export function dialText(dials = {}) {
+    const parts = Object.entries(DIALS).filter(([k]) => dials[k]).map(([k, d]) => `${d.label}: ${dials[k]}`);
+    return parts.length ? `Author's choices:\n${parts.map(p => `- ${p}`).join('\n')}\n` : '';
 }
 
 function loreDigest(entries, limit = 40) {
@@ -117,10 +133,14 @@ export const TASKS = {
             type: 'object', required: ['variants'],
             properties: { variants: { type: 'array', minItems: 1, items: { type: 'object', required: ['text', 'rationale'], properties: { label: S, text: S, rationale: S } } } },
         },
-        build: ({ card, field, instruction, count = 3 }) => ({
-            system: `${CRAFT}\nYou rewrite one field of a character card. Variants must be meaningfully different approaches, each labelled.`,
-            user: `Card:\n${cardDigest(card)}\n\nField to rewrite: ${CARD_FIELDS[field] ?? field}\nCurrent value:\n"""\n${card?.data?.[field] ?? ''}\n"""\n\nAuthor's instruction: ${instruction || 'Make it stronger for roleplay.'}\nGive ${count} variants, each with a label and a one-sentence rationale.`,
-        }),
+        build: ({ card, field, instruction, count = 3 }) => {
+            const current = String(card?.data?.[field] ?? '').trim();
+            const many = count > 1 ? `Give ${count} variants, each a meaningfully different approach with a label and a one-sentence rationale.` : 'Give exactly 1 variant: your best version, with a label and a one-sentence rationale.';
+            return {
+                system: `${CRAFT}\nYou ${current ? 'rewrite' : 'write'} one field of a character card so it fits everything else on the card.`,
+                user: `Card:\n${cardDigest(card)}\n\nField: ${CARD_FIELDS[field] ?? field}\n${current ? `Current value:\n"""\n${current}\n"""` : 'The field is empty: write it from scratch, consistent with the rest of the card.'}\n\nAuthor's instruction: ${instruction || (current ? 'Make it stronger for roleplay.' : 'Write it well for roleplay.')}\n${many}`,
+            };
+        },
     },
 
     'character.greetings': {
@@ -359,6 +379,41 @@ export const TASKS = {
         build: ({ card, style = '' }) => ({
             system: 'You write concise image-generation prompts (comma-separated visual descriptors) consistent with a character card: portrait/avatar, full body, and a scene background. Visual facts only.',
             user: `Card:\n${cardDigest(card)}\n${style ? `Style: ${style}\n` : ''}Return prompts for avatar, full body and background.`,
+        }),
+    },
+
+    // ---------------------------------------------------------------- whole-project generation
+    'project.premise': {
+        label: 'Invent or develop a premise',
+        area: 'project',
+        schemaName: 'premise',
+        maxTokens: 2000,
+        schema: {
+            type: 'object', required: ['title', 'logline', 'premise', 'card_type'],
+            properties: {
+                title: S, logline: S, premise: S, setting: S, tone: S, themes: SA,
+                user_role: S, central_conflict: S, card_type: { type: 'string', enum: ['character', 'scenario'] },
+                cast: { type: 'array', items: { type: 'object', required: ['name', 'role'], properties: { name: S, role: S } } },
+            },
+        },
+        build: ({ idea = '', dials = {} }) => ({
+            system: `${CRAFT}\nYou invent the premise of a SillyTavern roleplay the author can start playing immediately. Make it specific and playable: a concrete setting, a central conflict already in motion, a clear role for {{user}}, and a hook for the first scene. card_type is "character" when one main character carries the story, "scenario" when a narrator should voice a setting and several characters.`,
+            user: `${idea ? `Author's rough idea (develop it, keep what they asked for):\n${idea}\n` : 'The author has no idea yet: surprise them with something fresh and playable.\n'}${dialText(dials)}\nReturn a title, a one-line logline, a premise paragraph (120-220 words), setting, tone, themes, {{user}}'s role, the central conflict, 1-5 cast members, and the card type.`,
+        }),
+    },
+
+    'playtest.scenarios': {
+        label: 'Invent playtest scenarios',
+        area: 'playtest',
+        schemaName: 'scenarios',
+        maxTokens: 2000,
+        schema: {
+            type: 'object', required: ['scenarios'],
+            properties: { scenarios: { type: 'array', minItems: 1, items: { type: 'object', required: ['name', 'userTurns', 'lookFor'], properties: { name: S, userTurns: SA, lookFor: S } } } },
+        },
+        build: ({ card, count = 3 }) => ({
+            system: `${CRAFT}\nYou design short playtests for a roleplay card: each is 3-5 user messages that probe something (voice consistency, reaction to conflict, lore recall, handling a romance or refusal beat, pacing). User messages are short and in-world.`,
+            user: `Card:\n${cardDigest(card)}\n\nDesign ${count} distinct playtest scenarios with what to look for in the replies.`,
         }),
     },
 

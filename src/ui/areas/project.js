@@ -15,6 +15,7 @@ import { installQrSetLive } from '../../st/stscript-live.js';
 import { recordBackup } from '../inspector.js';
 import { KINDS, stripSensitive } from '../../core/preset.js';
 import { clone, uid, utf8Decode } from '../../core/bytes.js';
+import { Generator } from '../generator.js';
 const AREA_FOR_TYPE = { characters: 'characters', lorebooks: 'lore', presets: 'prompts', regexScripts: 'regex', qrSets: 'scripts', media: 'characters' };
 
 export function ProjectArea({ store, env, project, select, setArea }) {
@@ -54,6 +55,7 @@ export function ProjectArea({ store, env, project, select, setArea }) {
             <${Button} kind="primary" icon="upload" label="Apply to SillyTavern…" onClick=${() => setApplyOpen(true)} />
         </div>
         <div class="cs-area-body">
+            <${Generator} store=${store} env=${env} project=${project} select=${select} />
             <div class="cs-row" role="list">${counts.map(([k, icon]) => html`<button role="listitem" class="cs-btn" onClick=${() => setArea(k === 'playtests' ? 'playtest' : AREA_FOR_TYPE[k] ?? 'project')}><${Icon} name=${icon} /> ${project[k]?.length ?? 0} ${k === 'regexScripts' ? 'global regex' : k === 'qrSets' ? 'QR sets' : k}</button>`)}
                 <span class="cs-muted cs-small">· ${project.proposals.filter(p => p.status === 'pending').length} pending AI proposals · saved ${project._loadedFrom ?? 'to SillyTavern user files'}</span></div>
             <div class="cs-split">

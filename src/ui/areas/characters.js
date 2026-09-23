@@ -4,7 +4,9 @@ import {
     Section, Empty, Diagnostics, Modal, Toggle, NumberInput, Select, downloadBlob, pickFile, fileBytes, cx,
 } from '../kit.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
-import { pushProposals, PendingFor } from '../proposals.js';
+import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
+import { startGeneration, developCharacter, isRunning } from '../generator.js';
+import { newRun } from '../../ai/pipeline.js';
 import {
     findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal,
 } from '../../core/project.js';
@@ -152,7 +154,12 @@ function Ideation({ store, env, project, select }) {
             after: conceptToCharacter(c),
             rationale: c.hook,
             generation: r.generation,
-        })), 'AI concepts');
+        })), 'AI concepts', { forceReview: true });
+    };
+    const buildAll = () => {
+        store.update(p => (p.premise === premise ? p : { ...p, premise }), 'edit premise');
+        startGeneration(store, env, newRun({ idea: [premise, constraints].filter(Boolean).join('\n'), dials: project.lastDials ?? {} }));
+        env.toast('Building the whole roleplay: follow progress in Project → Generate.', 'ok', 6000);
     };
     return html`<${Section} title="Ideate from a premise" right=${html`<${CreationRoute} store=${store} project=${project} compact />`}>
         <${TextArea} label="Premise" value=${premise} onChange=${setPremise} rows=${3} stats=${false}
@@ -162,10 +169,11 @@ function Ideation({ store, env, project, select }) {
             <select class="text_pole" style="width:auto" value=${count} onChange=${e => setCount(Number(e.currentTarget.value))} aria-label="How many concepts">
                 ${[2, 3, 4, 5, 6].map(n => html`<option value=${n} selected=${n === count}>${n} concepts</option>`)}
             </select>
-            <${Button} kind="ai" icon="wand-magic-sparkles" label="Generate distinct concepts" onClick=${run} disabled=${ai.busy} />
+            <${Button} kind="ai" icon="wand-magic-sparkles" label="Show me concepts" onClick=${run} disabled=${ai.busy} />
+            <${Button} kind="ai" icon="bolt" label="Just build it for me" title="Premise → character → openings → lore → preset → regex → Quick Replies → image prompts → self-polish" onClick=${buildAll} />
         </div>
         <${AiStatus} ai=${ai} />
-        ${pending.length > 0 && html`<div class="cs-cands">${pending.map(p => html`<${ConceptCard} key=${p.id} store=${store} proposal=${p} select=${select} />`)}</div>`}
+        ${pending.length > 0 && html`<div class="cs-cands">${pending.map(p => html`<${ConceptCard} key=${p.id} store=${store} env=${env} proposal=${p} select=${select} />`)}</div>`}
     </${Section}>`;
 }
 
@@ -177,11 +185,13 @@ function conceptToCharacter(c) {
     return art;
 }
 
-function ConceptCard({ store, proposal, select }) {
+function ConceptCard({ store, env, proposal, select }) {
     const c = proposal.after.concept ?? {};
     const accept = () => {
         store.update(p => acceptProposal(p, proposal.id), 'accept concept');
         select('characters', proposal.after.id);
+        // Hands-free: developing a concept builds the whole character around it.
+        if (isHandsFree(store.get())) developCharacter(store, env, proposal.after.id);
     };
     const reject = () => store.update(p => rejectProposal(p, proposal.id), 'reject concept');
     return html`<div class="cs-cand">
@@ -197,7 +207,7 @@ function ConceptCard({ store, proposal, select }) {
             ${c.replay && html`<dt>Replay</dt><dd>${c.replay}</dd>`}
         </dl>
         <div class="cs-row">
-            <${Button} small kind="primary" icon="check" label="Develop this" onClick=${accept} />
+            <${Button} small kind="primary" icon="check" label=${isHandsFree(store.get()) ? 'Build this one' : 'Develop this'} title="Creates the character and generates everything around it" onClick=${accept} />
             <${Button} small kind="danger" icon="xmark" label="Discard" onClick=${reject} />
         </div>
     </div>`;
@@ -263,28 +273,35 @@ function AiField({ store, env, project, ch, field, label, rows = 6, hint, d, set
     const [open, setOpen] = useState(false);
     const [instruction, setInstruction] = useState('');
     const ai = useAiTask(store);
-    const run = async () => {
-        const r = await ai.run('character.rewrite-field', { card: ch.card, field, instruction, count: 3 });
+    const empty = !String(d[field] ?? '').trim();
+    const handsFree = isHandsFree(project);
+    /** One take is applied straight away (hands-free); several takes are always offered side by side for picking. */
+    const run = async (count = 1) => {
+        const r = await ai.run('character.rewrite-field', { card: store.get().characters.find(c => c.id === ch.id)?.card ?? ch.card, field, instruction, count });
         if (!r) return;
         const group = uid('grp');
-        pushProposals(store, r.value.variants.map(v => ({
-            task: 'character.rewrite-field', title: `${label}: ${v.label || 'variant'}`, group,
+        pushProposals(store, r.value.variants.slice(0, count).map(v => ({
+            task: 'character.rewrite-field', title: `${label}: ${v.label || 'take'}`, group,
             target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: v.text, rationale: v.rationale, generation: r.generation,
-        })), 'AI variants');
+        })), count > 1 ? 'AI takes' : `AI ${empty ? 'wrote' : 'rewrote'} ${label}`, { forceReview: count > 1 });
         setOpen(false);
     };
     const st = fieldStats(d[field]);
-    const actions = html`<span class="cs-muted">${st.words}w</span><${Button} small kind="ai" icon="wand-magic-sparkles" title=${`AI: rewrite ${label}`} onClick=${() => setOpen(!open)} ariaPressed=${open} />`;
+    const verb = empty ? 'Write it' : 'Rewrite';
+    const actions = html`<span class="cs-muted">${st.words}w</span>
+        ${empty && handsFree && html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Write it" title=${`AI writes the ${label.toLowerCase()} from the rest of the card`} onClick=${() => run(1)} disabled=${ai.busy} />`}
+        <${Button} small kind="ai" icon=${empty && handsFree ? 'sliders' : 'wand-magic-sparkles'} title=${`AI: ${verb.toLowerCase()} ${label} (with direction or several takes)`} onClick=${() => setOpen(!open)} ariaPressed=${open} />`;
     return html`<div class="cs-stack">
         <${TextArea} label=${label} value=${d[field]} onChange=${v => setData(field, v)} rows=${rows} hint=${hint} counter=${env.countTokens} actions=${actions} />
         ${open && html`<div class="cs-ai-box">
             <div class="cs-row">
-                <input class="text_pole" style="flex:1" placeholder=${`How should the ${label.toLowerCase()} change? (blank = make it stronger for roleplay)`} value=${instruction}
-                    onInput=${e => setInstruction(e.currentTarget.value)} onKeyDown=${e => e.key === 'Enter' && run()} aria-label="Rewrite instruction" />
-                <${Button} small kind="ai" icon="wand-magic-sparkles" label="3 variants" onClick=${run} disabled=${ai.busy} />
+                <input class="text_pole" style="flex:1" placeholder=${empty ? `Direction for the ${label.toLowerCase()} (optional)` : `How should the ${label.toLowerCase()} change? (blank = make it stronger for roleplay)`} value=${instruction}
+                    onInput=${e => setInstruction(e.currentTarget.value)} onKeyDown=${e => e.key === 'Enter' && run(handsFree ? 1 : 3)} aria-label="Rewrite instruction" />
+                ${handsFree && html`<${Button} small kind="ai" icon="wand-magic-sparkles" label=${verb} title="One take, applied right away (undo with Ctrl+Z)" onClick=${() => run(1)} disabled=${ai.busy} />`}
+                <${Button} small kind=${handsFree ? '' : 'ai'} icon="clone" label="3 takes" title="Three different takes to pick from" onClick=${() => run(3)} disabled=${ai.busy} />
             </div>
-            <${AiStatus} ai=${ai} />
         </div>`}
+        <${AiStatus} ai=${ai} />
         <${PendingFor} store=${store} project=${project} type="characters" id=${ch.id} path=${`card.data.${field}`} />
     </div>`;
 }
@@ -302,8 +319,8 @@ function ConceptPanel({ store, env, project, ch }) {
             if (value == null || (Array.isArray(value) && !value.length) || value === '') continue;
             specs.push({ task: 'character.expand', title: `Draft ${FIELD_LABELS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: value, rationale: r.value.rationale, generation: r.generation });
         }
-        pushProposals(store, specs, 'AI draft fields');
-        env.toast(`${specs.length} field drafts ready for review in the inspector`, 'ok');
+        const applied = pushProposals(store, specs, 'AI draft fields');
+        env.toast(applied.length ? `Wrote ${applied.length} fields (undo with Ctrl+Z)` : `${specs.length} field drafts ready for review in the inspector`, 'ok');
     };
     return html`<${Section} title="Concept" right=${html`<${Button} small icon="xmark" title="Hide concept notes" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'concept', undefined, { summary: 'Removed concept notes' }), 'remove concept')} />`}>
         <div class="cs-cand" style="border:none;padding:0">
@@ -325,6 +342,7 @@ function ConceptPanel({ store, env, project, ch }) {
 function CoreTab(p) {
     const { d, setData, store, ch, env, project } = p;
     const ai = useAiTask(store);
+    const building = (project.generationRuns ?? []).find(r => r.status === 'running' && r.state?.characterId === ch.id && isRunning(r.id));
     const critique = async () => {
         const lore = (ch.links?.lorebooks ?? []).flatMap(id => Object.values(findArtifact(project, 'lorebooks', id)?.data?.entries ?? {}));
         const r = await ai.run('character.critique', { card: ch.card, lore });
@@ -351,7 +369,14 @@ function CoreTab(p) {
             <${TextInput} label="Version" value=${d.character_version} onChange=${v => setData('character_version', v)} />
             <${Select} label="Kind" value=${ch.kind} options=${[{ value: 'character', label: 'Character' }, { value: 'scenario', label: 'Scenario / narrator' }]} onChange=${v => store.update(pr => editArtifactField(pr, 'characters', ch.id, 'kind', v), 'kind')} />
         </div>
-        <div class="cs-row"><${Button} kind="ai" icon="magnifying-glass-chart" label="Critique for roleplay quality" onClick=${critique} disabled=${ai.busy} /><${AiStatus} ai=${ai} /></div>
+        <div class="cs-row">
+            <${Button} kind="ai" icon="bolt" label=${building ? 'Building…' : 'Build the rest for me'} disabled=${building}
+                title="Fills every empty field, then writes openings, lore, a preset, regex, Quick Replies and image prompts around this character. Fields you wrote are kept."
+                onClick=${() => developCharacter(store, env, ch.id)} />
+            <${Button} kind="ai" icon="magnifying-glass-chart" label="Critique & fix" title=${isHandsFree(project) ? 'Reviews the card and applies the concrete fixes (undo with Ctrl+Z)' : 'Reviews the card and proposes fixes'} onClick=${critique} disabled=${ai.busy} />
+            <${AiStatus} ai=${ai} />
+        </div>
+        ${building && html`<div class="cs-muted cs-small"><span class="cs-spin"><${Icon} name="spinner" /></span> Building around ${d.name}: ${Object.entries(building.steps).filter(([, s]) => s.status === 'done').length} of ${Object.values(building.steps).filter(s => s.status !== 'skipped').length} steps done. Progress also shows in Project → Generate.</div>`}
         ${ch.critique && html`<${Section} title=${`Critique · ${new Date(ch.critique.time).toLocaleString()}`}>
             ${ch.critique.strengths?.length > 0 && html`<div class="cs-small"><strong>Strengths:</strong> ${ch.critique.strengths.join(' · ')}</div>`}
             <${Diagnostics} items=${ch.critique.notes} />

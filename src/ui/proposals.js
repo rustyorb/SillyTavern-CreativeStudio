@@ -106,9 +106,34 @@ export function prettyPath(path) {
     return path.replace(/^card\.data\./, '').replace(/^data\.entries\./, 'entry ').replace(/_/g, ' ');
 }
 
-/** Convenience: add several proposals in one undoable step. */
-export function pushProposals(store, specs, label = 'AI proposals') {
-    store.update(p => addProposals(p, specs.map(s => createProposal(p, s))), label);
+/** Hands-free (default) applies AI output immediately; 'review' keeps everything as proposals. */
+export function isHandsFree(project) {
+    return (project.settings?.aiMode ?? 'auto') !== 'review';
+}
+
+/**
+ * Add AI results. In hands-free mode the first result for each target is accepted right away (with provenance);
+ * extra takes for the same target stay available as pending alternatives. In review mode all stay pending.
+ * @returns {string[]} ids of accepted proposals
+ */
+export function pushProposals(store, specs, label = 'AI proposals', { forceReview = false } = {}) {
+    const accepted = [];
+    store.update(p => {
+        const props = specs.map(s => createProposal(p, s));
+        let next = addProposals(p, props);
+        if (!forceReview && isHandsFree(p)) {
+            const seen = new Set();
+            for (const prop of props) {
+                const key = `${prop.target.type}|${prop.target.id}|${prop.target.path}|${prop.target.id ? '' : prop.id}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                next = acceptProposal(next, prop.id);
+                accepted.push(prop.id);
+            }
+        }
+        return next;
+    }, label);
+    return accepted;
 }
 
 /** Inline list of pending proposals for one artifact (shown next to the editor). */

@@ -4,7 +4,7 @@ import {
     Diagnostics, Modal, Toggle, NumberInput, Select, downloadBlob, pickFile, fileBytes, cx,
 } from '../kit.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
-import { pushProposals, PendingFor } from '../proposals.js';
+import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
 import { findArtifact, editArtifactField, upsertArtifact, removeArtifact, logHistory } from '../../core/project.js';
 import {
     entriesOf, newEntry, normalizeWorld, lintWorld, simulateActivation, POSITION_LABEL, LOGIC_LABEL, ROLE_LABEL, TRIGGERS,
@@ -16,6 +16,14 @@ import { recordBackup } from '../inspector.js';
 import { stContext, readStWorldInfoSettings } from '../../st/env.js';
 
 export const newLorebookArtifact = name => ({ id: uid('lb'), name, data: { entries: {} }, origin: { kind: 'new' } });
+
+function linkLorebook(store, characterId, lorebookId) {
+    store.update(p => {
+        const c = findArtifact(p, 'characters', characterId);
+        if (!c || (c.links?.lorebooks ?? []).includes(lorebookId)) return p;
+        return editArtifactField(p, 'characters', characterId, 'links.lorebooks', [...(c.links?.lorebooks ?? []), lorebookId], { summary: 'Linked lorebook' });
+    }, 'link lorebook');
+}
 
 export function LoreArea(props) {
     const { project, selection } = props;
@@ -91,13 +99,13 @@ function StWorldPicker({ env, onClose, onPicked }) {
 /** AI world design from a premise or a character: proposes a new lorebook for review. */
 function WorldDesigner({ store, env, project, select }) {
     const [premise, setPremise] = useState(project.premise ?? '');
-    const [charId, setCharId] = useState('');
+    const [charId, setCharId] = useState(() => (project.characters.length === 1 ? project.characters[0].id : ''));
     const [count, setCount] = useState(8);
     const ai = useAiTask(store);
     const pending = project.proposals.filter(p => p.status === 'pending' && p.task === 'lore.structure' && !p.target.id);
     const run = async () => {
         const card = charId ? findArtifact(project, 'characters', charId)?.card : null;
-        const r = await ai.run('lore.structure', { premise, card, count });
+        const r = await ai.run('lore.structure', { premise: premise || store.get().premise || '', card, count });
         if (!r) return;
         const world = { entries: {} };
         for (const e of r.value.entries) {
@@ -105,12 +113,18 @@ function WorldDesigner({ store, env, project, select }) {
             entry.extensions = { studio: { category: e.category ?? '', rationale: e.rationale ?? '' } };
             world.entries[entry.uid] = entry;
         }
-        pushProposals(store, [{
+        const lbId = uid('lb');
+        const accepted = pushProposals(store, [{
             task: 'lore.structure', title: `New lorebook: ${r.value.entries.length} entries`,
             target: { type: 'lorebooks', id: null },
-            after: { id: uid('lb'), name: card ? `${card.data.name} — World` : 'World', data: world, origin: { kind: 'ai' } },
+            after: { id: lbId, name: card ? `${card.data.name} — World` : 'World', data: world, origin: { kind: 'ai', characterId: charId || undefined } },
             rationale: r.value.overview ?? '', generation: r.generation,
         }], 'AI world design');
+        if (!accepted.length) return;
+        // Hands-free: the lorebook exists now; link it to the character it was built for and open it.
+        if (charId) linkLorebook(store, charId, lbId);
+        env.toast(`Created a lorebook with ${r.value.entries.length} entries${card ? ` linked to ${card.data.name}` : ''}`, 'ok');
+        select('lorebooks', lbId);
     };
     return html`<${Section} title="Design a world with AI" right=${html`<${CreationRoute} store=${store} project=${project} compact />`}>
         <${TextArea} label="World premise" value=${premise} onChange=${setPremise} rows=${3} stats=${false} placeholder="Setting, factions, conflicts, what the roleplay needs to know…" />
@@ -122,7 +136,7 @@ function WorldDesigner({ store, env, project, select }) {
             <select class="text_pole" style="width:auto" value=${count} onChange=${e => setCount(Number(e.currentTarget.value))} aria-label="Entry count">
                 ${[4, 6, 8, 12, 16].map(n => html`<option value=${n} selected=${n === count}>${n} entries</option>`)}
             </select>
-            <${Button} kind="ai" icon="wand-magic-sparkles" label="Propose world structure" onClick=${run} disabled=${ai.busy} />
+            <${Button} kind="ai" icon="wand-magic-sparkles" label=${isHandsFree(project) ? 'Build the world' : 'Propose world structure'} onClick=${run} disabled=${ai.busy} />
         </div>
         <${AiStatus} ai=${ai} />
         ${pending.map(p => html`<${WorldProposal} key=${p.id} store=${store} proposal=${p} select=${select} />`)}
@@ -138,6 +152,7 @@ function WorldProposal({ store, proposal, select }) {
         const value = clone(proposal.after);
         value.data.entries = Object.fromEntries(Object.entries(value.data.entries).filter(([k]) => keep.has(Number(k))));
         store.update(p => acceptProposal(p, proposal.id, value), 'accept world');
+        if (value.origin?.characterId) linkLorebook(store, value.origin.characterId, value.id);
         select('lorebooks', value.id);
     };
     const reject = async () => {

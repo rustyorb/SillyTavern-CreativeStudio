@@ -5,6 +5,7 @@ import {
     Modal, Toggle, NumberInput, Select, downloadBlob, pickFile, fileBytes, cx,
 } from '../kit.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
+import { isHandsFree } from '../proposals.js';
 import { findArtifact, editArtifactField, upsertArtifact, removeArtifact, logHistory } from '../../core/project.js';
 import { defaultScript, PLACEMENT_LABEL, SUBSTITUTE_LABEL, STAGES, lintScripts, parseRegexImport, regexFromString, runRegexScript } from '../../core/regex.js';
 import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
@@ -300,20 +301,42 @@ function StageBench({ store, project, all, cur, characterId }) {
 
 // ---------------------------------------------------------------------------------------- AI
 
+/** One-click goals for the regex jobs roleplayers need most. */
+const REGEX_RECIPES = [
+    { label: 'Hide <think> blocks', goal: 'Hide <think>…</think> reasoning blocks (and a dangling unclosed <think> at the end) from the chat display only.' },
+    { label: 'Strip OOC notes', goal: 'Remove (OOC: …) and ((…)) out-of-character notes from what is sent to the model, keep them visible in chat.' },
+    { label: 'Trim unfinished sentence', goal: 'Remove a trailing unfinished sentence (text after the last . ! ? … or closing quote) from AI replies.' },
+    { label: 'Stop speaking for {{user}}', goal: 'Cut an AI reply at the point where the model starts writing lines for {{user}} (a new line beginning with {{user}}: or the user\'s name followed by a colon).' },
+    { label: 'Bold dialogue (display)', goal: 'Display "quoted dialogue" in bold in the chat view only; do not change the stored text.' },
+    { label: 'Hide HTML comments', goal: 'Hide <!-- … --> HTML comments from the chat display and from the prompt.' },
+];
+
 function GenerateRegex({ store, env, project, onClose, addGlobal }) {
     const [goal, setGoal] = useState('');
     const [samples, setSamples] = useState('');
     const ai = useAiTask(store);
     const [result, setResult] = useState(null);
     const [keep, setKeep] = useState(new Set());
-    const run = async () => {
-        const r = await ai.run('regex.generate', { goal, samples });
+    const run = async (g = goal) => {
+        if (!g.trim()) return;
+        setGoal(g);
+        const r = await ai.run('regex.generate', { goal: g, samples });
         if (!r) return;
+        if (isHandsFree(store.get())) {
+            // Hands-free: add every script whose own test cases pass here; anything failing stays for a look.
+            const passing = new Set(r.value.scripts.map((s, i) => (testsPass(s) ? i : -1)).filter(i => i >= 0));
+            if (passing.size === r.value.scripts.length) { accept(r, passing); return; }
+            if (passing.size) { accept(r, passing, false); env.toast(`Added ${passing.size} script(s) that passed their tests; ${r.value.scripts.length - passing.size} need a look.`, '', 7000); }
+            const rest = new Set(r.value.scripts.map((_, i) => i).filter(i => !passing.has(i)));
+            setResult({ ...r, value: { ...r.value, scripts: r.value.scripts.filter((_, i) => rest.has(i)) } });
+            setKeep(new Set());
+            return;
+        }
         setResult(r);
         setKeep(new Set(r.value.scripts.map((_, i) => i)));
     };
-    const accept = () => {
-        const chosen = result.value.scripts.filter((_, i) => keep.has(i));
+    const accept = (res = result, keepSet = keep, close = true) => {
+        const chosen = res.value.scripts.filter((_, i) => keepSet.has(i));
         const scripts = chosen.map(g => ({
             ...defaultScript(g.scriptName), findRegex: g.findRegex, replaceString: g.replaceString ?? '', trimStrings: g.trimStrings ?? [],
             placement: (g.placement ?? [2]).filter(p => [1, 2, 3, 5, 6].includes(p)), markdownOnly: !!g.markdownOnly, promptOnly: !!g.promptOnly,
@@ -322,12 +345,16 @@ function GenerateRegex({ store, env, project, onClose, addGlobal }) {
         addGlobal(scripts, `Added ${scripts.length} AI regex script(s)`, 'ai');
         const fx = chosen.flatMap(g => (g.tests ?? []).map((t, i) => ({ name: `${g.scriptName} #${i + 1}`, user: '', ai: t.input, expected: t.expected, wi: '', reasoning: '', depth: 0 })));
         if (fx.length) store.update(p => ({ ...p, regexFixtures: [...(p.regexFixtures ?? []), ...fx] }), 'add fixtures');
-        onClose();
+        if (close) {
+            env.toast(`Added ${scripts.length} regex script(s)${fx.length ? ` and ${fx.length} test fixture(s)` : ''}`, 'ok');
+            onClose();
+        }
     };
     return html`<${Modal} title="Generate regex scripts" onClose=${onClose} wide footer=${html`<${AiStatus} ai=${ai} /><${Button} label="Close" onClick=${onClose} />
-        ${result ? html`<${Button} kind="primary" icon="check" label=${`Add ${keep.size} script(s)`} onClick=${accept} disabled=${!keep.size} />` : html`<${Button} kind="ai" icon="wand-magic-sparkles" label="Generate" onClick=${run} disabled=${ai.busy || !goal.trim()} />`}`}>
+        ${result ? html`<${Button} kind="primary" icon="check" label=${`Add ${keep.size} script(s)`} onClick=${() => accept()} disabled=${!keep.size} />` : html`<${Button} kind="ai" icon="wand-magic-sparkles" label="Generate" onClick=${() => run()} disabled=${ai.busy || !goal.trim()} />`}`}>
         <${CreationRoute} store=${store} project=${project} />
-        <${TextArea} label="Goal" value=${goal} onChange=${setGoal} rows=${3} stats=${false} placeholder="e.g. Hide <think> blocks from the chat display; strip (OOC: …) notes from what is sent to the model." />
+        <div class="cs-row cs-small"><span class="cs-muted">One click:</span>${REGEX_RECIPES.map(r => html`<${Button} small key=${r.label} kind="ai" label=${r.label} title=${r.goal} onClick=${() => run(r.goal)} disabled=${ai.busy} />`)}</div>
+        <${TextArea} label="Or describe your own" value=${goal} onChange=${setGoal} rows=${3} stats=${false} placeholder="e.g. Hide <think> blocks from the chat display; strip (OOC: …) notes from what is sent to the model." />
         <${TextArea} label="Examples: before → after (optional)" value=${samples} onChange=${setSamples} rows=${4} stats=${false} />
         ${result && html`<table class="cs-table"><thead><tr><th></th><th>Script</th><th>Find → replace</th><th>Tests (checked here)</th></tr></thead><tbody>
             ${result.value.scripts.map((g, i) => {
@@ -351,4 +378,12 @@ function GenerateRegex({ store, env, project, onClose, addGlobal }) {
 
 function runLocal(script, text) {
     return runRegexScript({ ...script, disabled: false }, text).output;
+}
+
+/** True when a generated script passes all of its own (short) test cases; scripts without tests count as passing. */
+function testsPass(g) {
+    const script = { ...defaultScript(g.scriptName), ...g, placement: g.placement ?? [2] };
+    try {
+        return (g.tests ?? []).every(t => runLocal(script, String(t.input).slice(0, 2000)) === t.expected);
+    } catch { return false; }
 }
