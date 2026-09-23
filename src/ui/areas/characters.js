@@ -216,7 +216,7 @@ function CharacterEditor(props) {
             ${avatar ? html`<img src=${avatar.url} alt="" width="46" height="46" style="border-radius:6px;object-fit:cover;border:1px solid var(--cs-line)" />`
                 : html`<div class="cs-monogram" aria-hidden="true">${monogram(d.name)}</div>`}
             <div class="cs-entity-title"><h3>${d.name || '(unnamed)'}</h3><span class="cs-byline">${byline}</span></div>
-            ${ch.origin?.kind === 'st' && html`<${Badge} kind="accent" title="Linked to a SillyTavern character">ST: ${ch.origin.avatar}</${Badge}>`}
+            ${ch.origin?.kind === 'st' && html`<${Badge} kind="accent" title=${`A copy of ${ch.origin.avatar} from SillyTavern`}>ST</${Badge}>`}
             ${pendingCount > 0 && html`<${Badge} kind="accent">${pendingCount} pending</${Badge}>`}
             <div class="cs-spacer"></div>
             <${CreationRoute} store=${store} project=${project} compact />
@@ -354,7 +354,7 @@ function CoreTab(p) {
             <${Button} small icon="upload" label="Apply to SillyTavern…" onClick=${() => p.setTab('publish')} />
         </div>`}
         <div class="cs-row">
-            <${Button} kind="ai" icon="bolt" label=${building ? 'Building…' : 'Build the rest for me'} disabled=${building}
+            <${Button} kind="gild" icon="feather-pointed" label=${building ? 'Building…' : 'Build the rest for me'} disabled=${building}
                 title="Fills every empty field, then writes openings, lore, a preset, regex, Quick Replies and image prompts around this character. Fields you wrote are kept."
                 onClick=${() => developCharacter(store, env, ch.id)} />
             <${Button} kind="ai" icon="magnifying-glass-chart" label="Critique & fix" title=${isHandsFree(project) ? 'Reviews the card and applies the concrete fixes (undo with Ctrl+Z)' : 'Reviews the card and proposes fixes'} onClick=${critique} disabled=${ai.busy} />
@@ -529,6 +529,20 @@ function MetaTab({ store, env, project, ch, d, setData, setPath }) {
  * Pictures for a character: the AI writes the prompts (in the style the checkpoint wants), ComfyUI (or SillyTavern's
  * Image Generation) paints them, and expression sprites share one face. Nothing here needs ComfyUI knowledge.
  */
+/** Expressions by family of feeling: the sprite grid reads warm to cold, each family in its own colour. */
+const MOOD_FAMILIES = {
+    plain: ['neutral'],
+    bright: ['joy', 'amusement', 'excitement', 'optimism', 'pride', 'relief', 'approval', 'admiration', 'gratitude'],
+    tender: ['love', 'caring', 'desire', 'embarrassment'],
+    wonder: ['curiosity', 'realization', 'surprise', 'confusion'],
+    dread: ['nervousness', 'fear'],
+    blue: ['sadness', 'grief', 'remorse', 'disappointment'],
+    ember: ['annoyance', 'anger', 'disgust', 'disapproval'],
+};
+const MOOD_FAMILY = Object.fromEntries(Object.entries(MOOD_FAMILIES).flatMap(([f, labels]) => labels.map(l => [l, f])));
+const MOOD_RANK = Object.fromEntries(Object.values(MOOD_FAMILIES).flat().map((l, i) => [l, i]));
+const moodOrder = labels => [...labels].sort((a, b) => (MOOD_RANK[a] ?? 99) - (MOOD_RANK[b] ?? 99));
+
 function ImagesTab({ store, env, project, ch }) {
     const ai = useAiTask(store);
     const [style, setStyle] = useState('');
@@ -636,8 +650,10 @@ function ImagesTab({ store, env, project, ch }) {
     const spriteOf = label => (sprites[label] ? findArtifact(project, 'media', sprites[label]) : null);
     const figure = spriteOf(mood) ?? spriteOf('neutral') ?? spriteOf(Object.keys(sprites)[0]);
     const shownMood = spriteOf(mood) ? mood : figure ? (spriteOf('neutral') ? 'neutral' : Object.keys(sprites)[0]) : '';
+    const backdrop = !scene && figure ? (ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null) ?? gallery[0] ?? null : null;
     return html`
-        ${(scene || figure) && html`<div class="cs-stage" style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the painted scene' : ''}`}>
+        ${(scene || figure) && html`<div class=${cx('cs-stage', backdrop && 'has-backdrop')} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the painted scene' : ''}`}>
+            ${backdrop && html`<div class="cs-stage-backdrop" style=${`background-image:url("${backdrop.url}")`}></div><div class="cs-stage-light"></div>`}
             ${figure && html`<img class="cs-stage-figure" src=${figure.url} alt="" />`}
             <div class="cs-stage-caption"><span class="cs-stage-name">${d.name}</span>${shownMood && html`<span class="cs-stage-mood">${shownMood}</span>`}</div>
         </div>`}
@@ -691,10 +707,10 @@ function ImagesTab({ store, env, project, ch }) {
                 <div class="cs-fuse">${Array.from({ length: progress.total }, (_, i) => html`<span key=${i} class=${cx('cs-fuse-seg', i < progress.done ? 'is-done' : i === progress.done ? 'is-running' : '')}></span>`)}</div>
                 <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. The first one also paints the base portrait.</div>
             </div>`}
-            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${Object.keys(EXPRESSIONS).filter(l => sprites[l]).map(l => {
+            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${moodOrder(Object.keys(EXPRESSIONS).filter(l => sprites[l])).map(l => {
                 const m = findArtifact(project, 'media', sprites[l]);
                 return m && html`<button key=${l} type="button" class=${cx('cs-sprite', shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
-                    <img src=${m.url} alt="" loading="lazy" /><span class="cs-sprite-label">${l}</span>
+                    <img src=${m.url} alt="" loading="lazy" /><span class=${`cs-sprite-label cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`}>${l}</span>
                 </button>`;
             })}</div>
             <div class="cs-muted cs-small">Sprites also travel inside CHARX exports as emotion assets; SillyTavern turns them back into sprites on import.</div>`}

@@ -106,6 +106,10 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-btn-sm { padding: 2px 6px; font-size: 0.88em; }
 .cs-btn-primary { background: color-mix(in srgb, var(--cs-accent) 30%, transparent); border-color: var(--cs-accent); }
 .cs-btn-ai { background: color-mix(in srgb, var(--cs-em) 22%, transparent); border-color: color-mix(in srgb, var(--cs-em) 60%, transparent); }
+/* The one promise on a screen ("Build the rest for me"): gilded. */
+.cs-btn-gild { background: var(--cs-accent); border-color: var(--cs-accent); color: #1b1410; font-weight: 700; padding: 6px 15px;
+    box-shadow: 0 0 16px color-mix(in srgb, var(--cs-accent) 45%, transparent); }
+.cs-btn-gild:hover:not(:disabled) { border-color: #fff3; box-shadow: 0 0 24px color-mix(in srgb, var(--cs-accent) 65%, transparent); }
 .cs-btn-danger:hover:not(:disabled) { border-color: var(--cs-err); color: var(--cs-err); }
 .cs-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--cs-accent) 25%, transparent); border-color: var(--cs-accent); }
 .cs-badge {
@@ -425,11 +429,24 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 /* The stage: painted scene as the set, the character standing in it. */
 .cs-stage { position: relative; height: clamp(260px, 42vh, 470px); border: 1px solid var(--cs-line); border-radius: 8px; overflow: hidden;
     background-color: var(--cs-bg); background-size: cover; background-position: center; box-shadow: inset 0 0 140px 40px rgba(0, 0, 0, 0.75); }
+.cs-stage-backdrop { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(22px) brightness(0.42) saturate(1.2); }
+.cs-stage-light { position: absolute; left: 50%; bottom: -10%; width: 64%; height: 42%; transform: translateX(-50%); pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(255, 184, 120, 0.38), rgba(236, 120, 150, 0.16) 45%, transparent 72%); }
+.cs-stage.has-backdrop::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; box-shadow: inset 0 0 140px 40px rgba(0, 0, 0, 0.72); }
+.cs-stage-figure, .cs-stage-caption { z-index: 2; }
 .cs-stage-figure { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); height: 94%; max-width: 70%; object-fit: contain;
     filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.7)); }
 .cs-stage-caption { position: absolute; left: 14px; bottom: 12px; display: flex; flex-direction: column; color: #fff; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9); }
 .cs-stage-name { font-family: 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 1.6em; font-weight: 600; letter-spacing: 0.03em; }
 .cs-stage-mood { font-style: italic; text-transform: capitalize; opacity: 0.9; }
+.cs-sprite-label { --mood: rgba(0, 0, 0, 0.6); background: linear-gradient(90deg, var(--mood), rgba(0, 0, 0, 0.55) 85%); border-top: 2px solid var(--mood); }
+.cs-mood-plain { --mood: rgba(90, 90, 90, 0.8); }
+.cs-mood-bright { --mood: rgba(196, 142, 38, 0.88); }
+.cs-mood-tender { --mood: rgba(192, 78, 122, 0.88); }
+.cs-mood-wonder { --mood: rgba(122, 92, 196, 0.88); }
+.cs-mood-dread { --mood: rgba(56, 118, 132, 0.88); }
+.cs-mood-blue { --mood: rgba(52, 84, 168, 0.88); }
+.cs-mood-ember { --mood: rgba(176, 58, 40, 0.9); }
 @media (prefers-reduced-motion: reduce) { .cs-sprite img { transition: none; } }
 
 /* Bringing SillyTavern characters in */
