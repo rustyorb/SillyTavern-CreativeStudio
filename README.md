@@ -106,12 +106,13 @@ Ten steps, each one a structured AI call whose output becomes a real SillyTavern
 | **Regex** | Formatting helpers (hide thinking, strip OOC…), each with test cases | Character-scoped regex; the tests become fixtures |
 | **Quick Replies** | Story tools as STscript buttons, checked by SillyTavern's own parser | Quick Reply set linked to the character |
 | **Images** | Avatar, full-body and scene prompts | Ready for ST's Image Generation, or any image tool |
-| **Polish** | A strict self-critique; concrete fixes get applied | Revised fields + notes you can read |
+| **Polish** | A strict self-critique; concrete fixes get applied | Revised fields + notes you can read (on a character you wrote yourself, the fixes wait for your OK) |
 
 **It is built to finish.** If the model skips part of an answer, the step asks again for exactly what is missing.
-If a provider hangs, the call times out and the step retries once. If something still fails, only the steps that
-depend on it wait, and **Resume** picks up where it stopped. The whole run is one **Ctrl+Z** away, and **Discard**
-removes everything it made.
+If a provider hangs, the call times out and the step retries once. (On SillyTavern's main connection, where a request
+can't be cancelled, it stops and waits for you to press **Retry** instead.) If something still fails, only the steps
+that depend on it wait, and **Resume** picks up where it stopped. Every change a run makes is one **Ctrl+Z** away,
+and **Discard** removes everything it made.
 
 ### Hands-free or Review: you choose
 
