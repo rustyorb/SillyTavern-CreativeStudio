@@ -68,15 +68,28 @@ export function argumentLint(statements) {
         for (const a of namedDefs) {
             if (a.isRequired && !(a.name in st.named) && !(a.aliasList ?? []).some(x => x in st.named)) issues.push({ level: 'warn', line: st.line, message: `/${st.cmd}: missing required argument ${a.name}=` });
             const v = st.named[a.name];
-            if (v != null && a.forceEnum && (a.enumList ?? []).length && !/\{\{/.test(v)) {
-                const allowed = a.enumList.map(e => (typeof e === 'string' ? e : e.value));
-                if (!allowed.includes(v)) issues.push({ level: 'error', line: st.line, message: `/${st.cmd}: ${a.name}=${v} is not one of ${allowed.join(', ')}` });
+            if (v != null && a.forceEnum && !/\{\{/.test(v)) {
+                const allowed = enumValues(a);
+                if (allowed.length && !allowed.includes(v)) issues.push({ level: 'error', line: st.line, message: `/${st.cmd}: ${a.name}=${v} is not one of ${allowed.join(', ')}` });
             }
         }
         const unnamedReq = (def.unnamedArgumentList ?? []).some(a => a.isRequired);
         if (unnamedReq && !st.unnamed.trim()) issues.push({ level: 'info', line: st.line, message: `/${st.cmd}: required unnamed argument is empty (it may receive the previous pipe).` });
     }
     return issues;
+}
+
+/** Static enum values, or values from a (static-type) enum provider; dynamic providers that need chat state may return nothing. */
+function enumValues(a) {
+    const toVal = e => (typeof e === 'string' ? e : e?.value);
+    let list = (a.enumList ?? []).map(toVal).filter(x => x != null);
+    if (!list.length && typeof a.enumProvider === 'function') {
+        try {
+            const r = a.enumProvider({ namedArgumentList: [], unnamedArgumentList: [] }, { allVariableNames: [], variables: {} });
+            if (Array.isArray(r)) list = r.map(toVal).filter(x => x != null);
+        } catch { /* provider needs live state */ }
+    }
+    return list.map(String);
 }
 
 /**

@@ -116,6 +116,34 @@ export async function runLiveTests() {
         return 'saved and listed';
     });
 
+    await t('Studio-made CHARX is accepted by SillyTavern’s CHARX importer', async () => {
+        const card = emptyCardV3(`CSTEST_Charx_${Date.now().toString(36)}`);
+        card.data.first_mes = 'From a CHARX.';
+        const bytes = exportCard('charx', { card, image: blankPng() }).bytes;
+        const av = await live.importIntoSt(bytes, 'charx', `${card.data.name}.charx`);
+        cleanup.push(async () => stPost('/api/characters/delete', { avatar_url: av, delete_chats: true }).then(() => ctx.getCharacters?.()));
+        const stored = await live.getStCharacter(av);
+        assert(stored.data.first_mes === 'From a CHARX.', 'content mismatch');
+        assert(Array.isArray(stored.data.assets), 'assets not kept');
+        return `imported as ${av}`;
+    });
+
+    await t('Bundle World Info JSON is accepted by /api/worldinfo/import', async () => {
+        const wname = `CSTEST_Import_${Date.now().toString(36)}`;
+        const data = { entries: {} };
+        const e = newEntry(data, { comment: 'Imported', key: ['x'], content: 'y' });
+        data.entries[e.uid] = e;
+        const form = new FormData();
+        form.append('avatar', new Blob([JSON.stringify(data)], { type: 'application/json' }), `${wname}.json`);
+        const res = await fetch('/api/worldinfo/import', { method: 'POST', headers: ctx.getRequestHeaders({ omitContentType: true }), body: form });
+        assert(res.ok, `HTTP ${res.status}`);
+        const { name: created } = await res.json();
+        cleanup.push(() => stPost('/api/worldinfo/delete', { name: created }).then(() => ctx.updateWorldInfoList?.()));
+        const back = await stPost('/api/worldinfo/get', { name: created });
+        assert(back.entries?.[0]?.comment === 'Imported', 'entry missing');
+        return `imported as ${created}`;
+    });
+
     await t('STscript: real parser accepts valid script, reports errors with position', async () => {
         const ok = parseLive('/setvar key=x 1 | /getvar x | /echo {{pipe}}');
         assert(ok.available && ok.ok, `valid script rejected: ${ok.error?.message}`);
@@ -133,7 +161,12 @@ export async function runLiveTests() {
         const sname = `CSTEST_QR_${Date.now().toString(36)}`;
         const { set } = addQr(newSet(sname), { label: 'Ping', message: '/echo pong' });
         const r = await installQrSetLive(set);
-        cleanup.push(() => globalThis.quickReplyApi.deleteSet(sname));
+        // QuickReplySet.save() is debounced (200 ms): wait it out, or the pending save recreates the file after deletion.
+        cleanup.push(async () => {
+            await new Promise(r => setTimeout(r, 600));
+            await globalThis.quickReplyApi.deleteSet(sname).catch(() => {});
+            await stPost('/api/quick-replies/delete', { name: sname }).catch(() => {});
+        });
         assert(r.ok, r.error ?? 'install failed');
         const labels = globalThis.quickReplyApi.listQuickReplies(sname);
         assert(labels.includes('Ping'), 'QR not present');

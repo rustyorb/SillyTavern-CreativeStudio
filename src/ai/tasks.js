@@ -43,6 +43,9 @@ export const CARD_FIELDS = {
     creator_notes: 'Creator notes',
 };
 
+/** Display labels for every card field an AI task may propose (CARD_FIELDS stays limited to rewritable text). */
+export const FIELD_LABELS = { ...CARD_FIELDS, name: 'Name', tags: 'Tags', alternate_greetings: 'Alternate greetings', group_only_greetings: 'Group-only greetings', nickname: 'Nickname' };
+
 export const TASKS = {
     // ---------------------------------------------------------------- characters
     'character.ideate': {

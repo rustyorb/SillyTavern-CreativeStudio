@@ -35,6 +35,10 @@ Legend — **Source**: file:line in the 1.19.0 release source (`docs/research/*.
 | Global regex save | Source `engine.js:112-146` | 1.19.0 | Regex panel refreshes on reopen/reload |
 | QR set v2 JSON, v1 migration | Source `QuickReplySet.js`, `index.js:65-92`; Unit | 1.19.0 | UI importer rejects v1; studio converts |
 | QR live install via Quick Reply's importer | Runtime | 1.19.0 | ST asks before replacing an existing set |
+| QR set save is debounced (200 ms) | Source `QuickReplySet.js:44-46`; Runtime (a delete right after install was undone by the pending save) | 1.19.0 | Wait for the debounce before deleting/re-saving a just-installed set |
+| Studio CHARX accepted by ST's CHARX importer | Runtime | 1.19.0 | — |
+| Bundle World Info JSON accepted by `/api/worldinfo/import` | Runtime | 1.19.0 | — |
+| STscript `forceEnum` values from enum providers (e.g. `/setvar as=`) | Runtime (registry) | 1.19.0 | Providers needing live chat state may yield no values; those are not checked |
 | STscript syntax check with `SlashCommandParser.parse` | Runtime | 1.19.0 | Parser does not check required args/enums — studio adds `argumentLint` |
 | STscript scanner/effects (offline) | Unit (sample accepted by ST's real parser) | 1.19.0 | Heuristic effect table; unknown commands flagged |
 | Macro engine | Source `power-user.js:302` | 1.19.0 | New engine default on; previews substitute only `{{char}}`/`{{user}}` offline |

@@ -11,7 +11,7 @@ import {
 import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3 } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
 import { importCardFile, exportCard, EXPORT_KINDS } from '../../core/cardio.js';
-import { CARD_FIELDS } from '../../ai/tasks.js';
+import { CARD_FIELDS, FIELD_LABELS } from '../../ai/tasks.js';
 import { characterBookToWorld, worldToCharacterBook, normalizeWorld } from '../../core/lorebook.js';
 import { clone, uid } from '../../core/bytes.js';
 import { listStCharacters, exportStCharacterPng, importIntoSt, applyCardToSt, getStCharacter } from '../../st/live.js';
@@ -299,7 +299,7 @@ function ConceptPanel({ store, env, project, ch }) {
         const specs = [];
         for (const [field, value] of Object.entries(r.value.fields ?? {})) {
             if (value == null || (Array.isArray(value) && !value.length) || value === '') continue;
-            specs.push({ task: 'character.expand', title: `Draft ${CARD_FIELDS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: value, rationale: r.value.rationale, generation: r.generation });
+            specs.push({ task: 'character.expand', title: `Draft ${FIELD_LABELS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: value, rationale: r.value.rationale, generation: r.generation });
         }
         pushProposals(store, specs, 'AI draft fields');
         env.toast(`${specs.length} field drafts ready for review in the inspector`, 'ok');
