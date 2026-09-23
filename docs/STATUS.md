@@ -37,7 +37,7 @@ Legend: ✅ implemented and verified (unit and/or live) · 🟡 implemented, par
 - ✅ Versions & compare (prompt-level diff), import (incl. Advanced Formatting master export), export (sensitive fields stripped), save to ST
 - ✅ Connection profiles shown as *selections*, never mixed with preset contents; secrets never copied
 - ✅ AI prompt generation from goals + sample outputs with per-prompt selection; TC system prompt generation
-- 🟡 Token counts in the assembled preview are estimates; field editors use ST's tokenizer
+- ✅ Token counts in the assembled preview and field editors come from SillyTavern’s active tokenizer (estimates shown only until counts arrive)
 
 ### 4. Regex laboratory
 - ✅ Global / preset / character scopes in engine order, full editor, import/export (new ids like ST), pull/save global to ST (backup)
@@ -64,7 +64,7 @@ Legend: ✅ implemented and verified (unit and/or live) · 🟡 implemented, par
 ## Known gaps and next steps
 1. Run a full sandbox playtest and a live `/imagine` generation on a machine with a GPU-backed model and an image backend.
 2. Claude Fable 5.1 native structured output in ST 1.19 may return `{}` (suspected ST client/server mismatch); the gateway already parses raw text, but this is unverified against the real API.
-3. Token totals in the assembled CC preview use an estimate; could batch ST's tokenizer.
+3. (Done) Assembled-preview token counts now use ST’s tokenizer.
 4. The activation simulator does not track sticky/cooldown state across turns; playtests could feed turn-by-turn state.
 5. Keyboard: Ctrl+K palette, Alt+1…7, Alt+I, undo/redo, save, Esc; list navigation inside editors is mouse-first.
 6. i18n: UI strings are English only.

@@ -490,7 +490,18 @@ function CcPreview({ store, env, project, pr }) {
     const [liveErr, setLiveErr] = useState('');
     const card = charId ? findArtifact(project, 'characters', charId)?.card : null;
     const blocks = useMemo(() => assembleCc(pr.data, sceneFromCard(card), { generationType: gen, honorCardOverrides: overrides }), [pr.data, card, gen, overrides]);
-    const total = blocks.reduce((s, b) => s + roughTokens(b.content), 0);
+    // Exact counts from SillyTavern's active tokenizer (estimates until they arrive).
+    const [counts, setCounts] = useState(null);
+    useEffect(() => {
+        let alive = true;
+        setCounts(null);
+        const t = setTimeout(() => {
+            Promise.all(blocks.map(b => env.countTokens(b.content))).then(c => alive && setCounts(c)).catch(() => {});
+        }, 300);
+        return () => { alive = false; clearTimeout(t); };
+    }, [blocks]);
+    const tok = i => (counts ? counts[i] : roughTokens(blocks[i].content));
+    const total = blocks.reduce((s, _, i) => s + tok(i), 0);
     const ai = useAiTask(store);
     const [critique, setCritique] = useState(null);
     const runLive = async () => {
@@ -508,9 +519,9 @@ function CcPreview({ store, env, project, pr }) {
                 <${Select} label="Generation type" value=${gen} options=${TRIGGERS} onChange=${setGen} />
                 <${Toggle} label="Apply card overrides" checked=${overrides} onChange=${setOverrides} />
             </div>
-            <div class="cs-small cs-muted">Structural preview of this preset (≈${total} tokens, ${blocks.length} messages). Roles, order and in-chat depth follow ST's assembly; exact text (World Info, macros, squashing, names) comes from ST itself in the live dry run →</div>
+            <div class="cs-small cs-muted">Structural preview of this preset (${counts ? '' : '≈'}${total} tokens${counts ? ' by SillyTavern’s tokenizer' : ''}, ${blocks.length} messages). Roles, order and in-chat depth follow ST's assembly; exact text (World Info, macros, squashing, names) comes from ST itself in the live dry run →</div>
             ${blocks.map((b, i) => html`<div key=${i} class=${cx('cs-pblock', `cs-pblock-${b.role}`, b.source === 'injection' && 'cs-injected')}>
-                <div class="cs-pblock-head"><strong>${b.role}</strong><span>${b.label}</span><span class="cs-spacer" style="flex:1"></span><span>≈${roughTokens(b.content)} tok</span></div>
+                <div class="cs-pblock-head"><strong>${b.role}</strong><span>${b.label}</span><span class="cs-spacer" style="flex:1"></span><span>${counts ? '' : '≈'}${tok(i)} tok</span></div>
                 <div class="cs-pblock-body">${b.content}</div>
             </div>`)}
         </div>
