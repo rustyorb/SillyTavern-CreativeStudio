@@ -6,6 +6,19 @@ import { createProject } from '../core/project.js';
 import { Workspace, AREA_FOR_TYPE } from './workspace.js';
 import { Palette } from './palette.js';
 import { isHandsFree } from './proposals.js';
+import { AiSetup } from './providers-panel.js';
+
+/** A new project starts with the creation model chosen last time (if that profile still exists). */
+function withDefaultCreationModel(project) {
+    try {
+        const ctx = globalThis.SillyTavern.getContext();
+        const id = ctx.extensionSettings?.creativeStudio?.defaultCreationProfileId;
+        if (id && ctx.extensionSettings?.connectionManager?.profiles?.some(p => p.id === id)) {
+            return { ...project, settings: { ...project.settings, creationProfileId: id } };
+        }
+    } catch { /* no ST context */ }
+    return project;
+}
 
 let store = null;
 let studioEnv = null;
@@ -18,7 +31,7 @@ export async function mountStudio(root, { route, onClose }) {
     }
     if (!store) {
         const last = await studioEnv.storage.loadLastProject().catch(() => null);
-        store = createStore(last ?? createProject('My first project'));
+        store = createStore(last ?? withDefaultCreationModel(createProject('My first project')));
         studioEnv.attachStore(store);
     }
     render(html`<${Studio} store=${store} env=${studioEnv} initialRoute=${route} onClose=${onClose} />`, root);
@@ -49,8 +62,14 @@ function Studio({ store, env, initialRoute, onClose }) {
     const [saveState, setSaveState] = useState(env.saveState());
     const [toast, setToast] = useState(null);
     const [paletteOpen, setPaletteOpen] = useState(false);
+    const [aiSetupOpen, setAiSetupOpen] = useState(false);
 
     useEffect(() => env.onSaveState(setSaveState), [env]);
+    useEffect(() => {
+        const open = () => setAiSetupOpen(true);
+        globalThis.addEventListener('cs-ai-setup', open);
+        return () => globalThis.removeEventListener('cs-ai-setup', open);
+    }, []);
     useEffect(() => env.onToast(t => {
         setToast(t);
         clearTimeout(env._toastTimer);
@@ -110,6 +129,7 @@ function Studio({ store, env, initialRoute, onClose }) {
                     aria-pressed=${handsFree}>
                     <${Icon} name=${handsFree ? 'bolt' : 'list-check'} /><span>${handsFree ? 'Hands-free' : 'Review'}</span>
                 </button>
+                <${Button} small icon="plug" title="AI for creation: choose the model or add a provider" onClick=${() => setAiSetupOpen(true)} />
                 <${Button} small icon="magnifying-glass" title="Command palette (Ctrl+K)" onClick=${() => setPaletteOpen(true)} />
                 <${Button} small icon="rotate-left" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
                 <${Button} small icon="rotate-right" title=${store.canRedo() ? `Redo: ${store.peekRedo()} (Ctrl+Y)` : 'Nothing to redo'} disabled=${!store.canRedo()} onClick=${() => store.redo()} />
@@ -131,6 +151,7 @@ function Studio({ store, env, initialRoute, onClose }) {
             else if (i.id === 'proposals') openInspectorAt('proposals');
             else if (i.id === 'inspector') setInspectorOpen(!inspectorOpen);
         }} />`}
+        ${aiSetupOpen && html`<${AiSetup} store=${store} env=${env} project=${project} onClose=${() => setAiSetupOpen(false)} />`}
         ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
     </div>`;
 }
@@ -150,7 +171,7 @@ function ProjectSwitcher({ store, env, project }) {
         const name = await env.prompt('New project name', 'Untitled project');
         if (!name) return;
         await env.saveNow();
-        store.reset(createProject(name));
+        store.reset(withDefaultCreationModel(createProject(name)));
         await env.saveNow();
         setOpen(false);
     };

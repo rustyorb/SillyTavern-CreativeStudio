@@ -175,3 +175,17 @@ test('AI lore keys: "secondary" synonyms become primary keys, so an entry fires 
     assert.equal(r.results.find(x => x.entry.uid === e.uid).status, 'activated');
     assert.deepEqual(entryKeys({ keys: ['a', ' a '], secondary_keys: ['b'] }), ['a', 'b']);
 });
+
+test('card drafting requires the fields it asks for (schema-constrained models return the minimum otherwise)', async () => {
+    const { getTask, taskSchema, CORE_CARD_FIELDS } = await import('../src/ai/tasks.js');
+    const { validate } = await import('../src/ai/schema.js');
+    const task = getTask('character.expand');
+    assert.deepEqual(taskSchema(task, {}).properties.fields.required, CORE_CARD_FIELDS);
+    assert.deepEqual(taskSchema(task, { only: ['first_mes', 'mes_example'] }).properties.fields.required, ['first_mes', 'mes_example']);
+    // the real DeepSeek answer that claimed to have written a first message
+    const errs = validate(taskSchema(task, { only: ['first_mes', 'mes_example'] }), { fields: { name: 'Kaelen', tags: ['x'] }, rationale: 'The first_mes drops the user into a scene…' });
+    assert.deepEqual(errs.map(e => e.path).sort(), ['$.fields.first_mes', '$.fields.mes_example']);
+    assert.ok(validate(taskSchema(task, {}), { fields: { description: '', personality: 'p', scenario: 's', first_mes: 'f', mes_example: 'm', tags: ['t'] }, rationale: '' }).some(e => /description/.test(e.path)), 'empty strings fail too');
+    // tasks without a per-call schema keep their static one
+    assert.equal(taskSchema(getTask('lore.structure'), {}), getTask('lore.structure').schema);
+});

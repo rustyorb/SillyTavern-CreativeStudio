@@ -1,7 +1,8 @@
 // AI UI plumbing: task runner hook, route indicator, profile picker.
 import { html, useState, useRef, useCallback, Button, Icon, cx } from './kit.js';
 import { runStructured, describeRoute, listProfiles, AiError } from '../ai/gateway.js';
-import { getTask } from '../ai/tasks.js';
+import { openAiSetup } from './providers-panel.js';
+import { getTask, taskSchema } from '../ai/tasks.js';
 import { stContext } from '../st/env.js';
 
 /**
@@ -26,7 +27,7 @@ export function useAiTask(store) {
             const { system, user } = task.build(args);
             const profileId = store.get().settings?.creationProfileId ?? '';
             const result = await runStructured(stContext(), {
-                system, user, schema: task.schema, schemaName: task.schemaName, profileId,
+                system, user, schema: taskSchema(task, args), schemaName: task.schemaName, profileId,
                 maxTokens: args?.maxTokens ?? task.maxTokens, signal: ac.signal, onStatus: setStatus,
             });
             setStatus(`Done in ${(result.meta.durationMs / 1000).toFixed(1)}s${result.meta.repaired.length ? ` (repaired: ${result.meta.repaired.join(', ')})` : ''}${result.meta.validationErrors?.length ? ` · ${result.meta.validationErrors.length} schema warning(s)` : ''}`);
@@ -73,12 +74,21 @@ export function CreationRoute({ store, project, compact }) {
     const current = project.settings?.creationProfileId ?? '';
     const route = describeRoute(ctx, current);
     const set = id => store.update(p => ({ ...p, settings: { ...p.settings, creationProfileId: id } }), 'creation profile');
+    const pick = e => {
+        if (e.currentTarget.value === '__add__') {
+            e.currentTarget.value = current;
+            openAiSetup();
+            return;
+        }
+        set(e.currentTarget.value);
+    };
     return html`<div class=${cx('cs-row', 'cs-small')} title="Structured creation tasks can use a different connection profile than your roleplay model.">
         <${Icon} name="wand-magic-sparkles" />
         ${!compact && html`<span class="cs-muted">Creation model:</span>`}
-        <select class="text_pole cs-input" style="width:auto;max-width:260px" value=${current} onChange=${e => set(e.currentTarget.value)} aria-label="Creation connection profile">
+        <select class="text_pole cs-input" style="width:auto;max-width:260px" value=${current} onChange=${pick} aria-label="Creation connection profile">
             <option value="">Main connection</option>
             ${profiles.map(p => html`<option value=${p.id} selected=${p.id === current}>${p.name}</option>`)}
+            <option value="__add__">＋ Add a provider…</option>
         </select>
         <span class=${route.ok ? 'cs-muted' : 'cs-err-text'}>${route.label}${route.ok && !route.schemaEnforced ? ' · JSON by instruction (no schema enforcement)' : ''}</span>
     </div>`;

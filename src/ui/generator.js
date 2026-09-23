@@ -2,7 +2,7 @@
 import { html, useState, Button, Icon, Badge, Section, Select, cx } from './kit.js';
 import { CreationRoute } from './ai.js';
 import { STEPS, DEFAULT_STEPS, newRun, runPipeline, retryable, discardRun } from '../ai/pipeline.js';
-import { DIALS, getTask } from '../ai/tasks.js';
+import { DIALS, getTask, taskSchema } from '../ai/tasks.js';
 import { runStructured } from '../ai/gateway.js';
 import { stContext } from '../st/env.js';
 import { commandRegistry, describeCommand } from '../st/stscript-live.js';
@@ -15,7 +15,7 @@ export function makeRunTask(store, onStatus = () => {}) {
         const task = getTask(taskId);
         const { system, user } = task.build(args);
         const profileId = store.get().settings?.creationProfileId ?? '';
-        const r = await runStructured(stContext(), { system, user, schema: task.schema, schemaName: task.schemaName, profileId, maxTokens: args?.maxTokens ?? task.maxTokens, signal, onStatus });
+        const r = await runStructured(stContext(), { system, user, schema: taskSchema(task, args), schemaName: task.schemaName, profileId, maxTokens: args?.maxTokens ?? task.maxTokens, signal, onStatus });
         return { value: r.value, generation: { task: taskId, ...r.meta, prompt: `${system}\n---\n${user}` } };
     };
 }

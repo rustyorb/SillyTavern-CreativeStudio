@@ -72,6 +72,25 @@ export const FIELD_LABELS = { ...CARD_FIELDS, name: 'Name', tags: 'Tags', altern
 /** The fields a playable card needs; card drafting asks for all of them and generation repairs any left empty. */
 export const CORE_CARD_FIELDS = ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'tags'];
 
+/** Card-field result schema with the wanted fields required (and non-empty). */
+function cardFieldsSchema(required) {
+    const text = { type: 'string', minLength: 1 };
+    const list = { type: 'array', items: { type: 'string' } };
+    const all = {
+        name: text, description: text, personality: text, scenario: text, first_mes: text, alternate_greetings: list,
+        mes_example: text, creator_notes: text, tags: { ...list, minItems: 1 }, system_prompt: text, post_history_instructions: text,
+    };
+    return {
+        type: 'object', required: ['fields', 'rationale'],
+        properties: { fields: { type: 'object', required: [...required], properties: all }, rationale: { type: 'string' } },
+    };
+}
+
+/** The schema for one call of a task (some tasks require different fields depending on the request). */
+export function taskSchema(task, args) {
+    return task.schemaFor?.(args ?? {}) ?? task.schema;
+}
+
 /**
  * Trigger keys from AI lore output. Models use "secondary keys" for synonyms, but in SillyTavern secondary keys are an
  * AND/NOT filter that stops the entry firing on its primary key alone; so every key becomes a primary key.
@@ -131,19 +150,9 @@ export const TASKS = {
         area: 'characters',
         schemaName: 'card_fields',
         maxTokens: 5000,
-        schema: {
-            type: 'object', required: ['fields', 'rationale'],
-            properties: {
-                fields: {
-                    type: 'object',
-                    properties: {
-                        name: S, description: S, personality: S, scenario: S, first_mes: S,
-                        alternate_greetings: SA, mes_example: S, creator_notes: S, tags: SA, system_prompt: S, post_history_instructions: S,
-                    },
-                },
-                rationale: S,
-            },
-        },
+        schema: cardFieldsSchema(CORE_CARD_FIELDS),
+        // Schema-constrained decoding produces the smallest valid object, so the fields we need must be required.
+        schemaFor: ({ only = null } = {}) => cardFieldsSchema(only?.length ? only : CORE_CARD_FIELDS),
         build: ({ concept, card, style = '', only = null }) => {
             const want = only?.length ? only : CORE_CARD_FIELDS;
             return {
