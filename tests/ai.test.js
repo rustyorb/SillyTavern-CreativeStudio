@@ -117,6 +117,18 @@ test('unparsable output raises AiError with raw text preserved', async () => {
     await assert.rejects(runStructured(ctx, { system: 's', user: 'u', schema: SCHEMA }), e => e instanceof AiError && e.raw === 'I cannot do that.');
 });
 
+test('a call that never answers times out (main route) and aborts the request (profile route)', async () => {
+    const hang = mockCtx();
+    hang.generateRaw = () => new Promise(() => {});
+    await assert.rejects(runStructured(hang, { system: 's', user: 'u', schema: SCHEMA, timeoutMs: 40 }), e => e instanceof AiError && e.timeout === true && /No answer after/.test(e.message));
+    const profiles = [{ id: 'p1', name: 'X', api: 'openai' }];
+    const ctx = mockCtx({ profiles });
+    let aborted = false;
+    ctx.ConnectionManagerRequestService.sendRequest = (id, msgs, max, custom) => new Promise(() => custom.signal.addEventListener('abort', () => { aborted = true; }));
+    await assert.rejects(runStructured(ctx, { system: 's', user: 'u', schema: SCHEMA, profileId: 'p1', timeoutMs: 40 }), e => e.timeout === true);
+    assert.equal(aborted, true);
+});
+
 test('request failures and cancellation surface as AiError', async () => {
     const profiles = [{ id: 'p1', name: 'X', api: 'openai' }];
     const ctx = mockCtx({ profiles, responses: [new Error('401 bad key')] });

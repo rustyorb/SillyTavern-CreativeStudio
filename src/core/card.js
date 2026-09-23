@@ -290,3 +290,43 @@ export function splitExamples(mesExample) {
 export function joinExamples(examples) {
     return examples.filter(e => e.trim()).map(e => `<START>\n${e.trim()}`).join('\n');
 }
+
+/**
+ * Repair common model slips in example dialogue so SillyTavern parses it as intended:
+ * missing <START>, "{{char}} text" without a colon, the character's literal name or "User:" instead of macros,
+ * and a non-existent {{system}} macro (turned into {{char}} narration, merged into the next {{char}} line).
+ */
+export function tidyExamples(text, charName = '') {
+    const src = String(text ?? '').replace(/\r\n?/g, '\n').trim();
+    if (!src) return src;
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRe = charName ? new RegExp(`^\\s*${esc(charName)}\\s*:\\s*`, 'i') : null;
+    const blocks = src.split(/<START>/i).map(b => b.trim()).filter(Boolean);
+    const out = blocks.map(block => {
+        const lines = [];
+        let pendingNarration = '';
+        for (let line of block.split('\n')) {
+            if (!line.trim()) continue;
+            line = line.replace(/^\s*\{\{\s*(user|char)\s*\}\}\s*:?\s*/i, (_, who) => `{{${who.toLowerCase()}}}: `);
+            if (nameRe) line = line.replace(nameRe, '{{char}}: ');
+            line = line.replace(/^\s*user\s*:\s*/i, '{{user}}: ');
+            const sys = line.match(/^\s*\{\{\s*(system|narrator)\s*\}\}\s*:?\s*(.*)$/i);
+            if (sys) {
+                const t = sys[2].trim().replace(/^\*+|\*+$/g, '');
+                if (t) pendingNarration = pendingNarration ? `${pendingNarration} ${t}` : t;
+                continue;
+            }
+            if (pendingNarration && line.startsWith('{{char}}: ')) {
+                line = `{{char}}: *${pendingNarration}* ${line.slice(10)}`;
+                pendingNarration = '';
+            } else if (pendingNarration && line.startsWith('{{user}}: ')) {
+                lines.push(`{{char}}: *${pendingNarration}*`);
+                pendingNarration = '';
+            }
+            lines.push(line.trimEnd());
+        }
+        if (pendingNarration) lines.push(`{{char}}: *${pendingNarration}*`);
+        return lines.join('\n');
+    }).filter(Boolean);
+    return joinExamples(out);
+}

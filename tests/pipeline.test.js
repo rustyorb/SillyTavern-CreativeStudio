@@ -29,7 +29,8 @@ function harness(overrides = {}) {
             runTask: async (task, args) => {
                 calls.push({ task, args });
                 if (overrides[task] instanceof Error) throw overrides[task];
-                return { value: structuredClone(overrides[task] ?? FAKE[task]), generation: { label: 'fake' } };
+                const v = typeof overrides[task] === 'function' ? overrides[task](args) : overrides[task];
+                return { value: structuredClone(v ?? FAKE[task]), generation: { label: 'fake' } };
             },
         },
     };
@@ -81,6 +82,15 @@ test('a failed step blocks its dependents but not independent steps; retry resum
     assert.equal(h.project.characters.length, 1, 'no duplicate character on retry');
 });
 
+test('a step that fails once is retried automatically before it counts as failed', async () => {
+    let n = 0;
+    const h = harness({ 'lore.structure': () => { if (n++ === 0) throw new Error('No answer after 240 s'); return FAKE['lore.structure']; } });
+    const run = await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card', 'lore'] }) });
+    assert.equal(run.steps.lore.status, 'done');
+    assert.equal(h.calls.filter(c => c.task === 'lore.structure').length, 2);
+    assert.equal(h.project.lorebooks.length, 1);
+});
+
 test('skipped steps are not run; discard removes created artifacts', async () => {
     const h = harness();
     const run = await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card', 'lore'] }) });
@@ -102,6 +112,37 @@ test('cancellation stops before the next step', async () => {
     assert.ok(STEPS.every(s => run.steps[s.id].status !== 'running'));
 });
 
+test('fields the model skipped are asked for again, and only those', async () => {
+    const partial = { fields: { description: 'A gaunt keeper.', personality: 'wary', scenario: 'Storm night.', tags: ['x'] }, rationale: 'r' };
+    const h = harness({
+        'character.expand': args => (args.only ? { fields: { first_mes: 'The lamp gutters.', mes_example: '<START>\n{{char}}: Aye.', description: 'SHOULD NOT REPLACE' }, rationale: 'fix' } : partial),
+    });
+    const run = await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card'] }) });
+    assert.equal(run.steps.card.status, 'done');
+    assert.equal(run.steps.card.warning, undefined);
+    const expandCalls = h.calls.filter(c => c.task === 'character.expand');
+    assert.equal(expandCalls.length, 2);
+    assert.deepEqual(expandCalls[1].args.only, ['first_mes', 'mes_example']);
+    const d = h.project.characters[0].card.data;
+    assert.equal(d.first_mes, 'The lamp gutters.');
+    assert.equal(d.description, 'A gaunt keeper.', 'repair pass fills gaps only');
+});
+
+test('a model that never writes a field leaves a visible warning, not an endless loop', async () => {
+    const h = harness({ 'character.expand': { fields: { description: 'x', scenario: 'y', mes_example: 'z' }, rationale: 'r' } });
+    const run = await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card'] }) });
+    assert.equal(run.steps.card.status, 'done');
+    assert.match(run.steps.card.warning, /first_mes/);
+    assert.equal(h.calls.filter(c => c.task === 'character.expand').length, 3);
+});
+
+test('lore titles: short title wins, a sentence-long title falls back to the first key', async () => {
+    const { entryTitle } = await import('../src/ai/tasks.js');
+    assert.equal(entryTitle({ title: "Serpent's Maw", keys: ['maw'] }), "Serpent's Maw");
+    assert.equal(entryTitle({ comment: 'The clandestine mooring point used by the smugglers on moonless nights.', keys: ["Serpent's Maw"] }), "Serpent's Maw");
+    assert.equal(entryTitle({ keys: ['cove'] }), 'cove');
+});
+
 test('fillOnly never overwrites fields that already have content', async () => {
     const { newCharacter, upsertArtifact } = await import('../src/core/project.js');
     const h = harness();
@@ -113,6 +154,8 @@ test('fillOnly never overwrites fields that already have content', async () => {
     run.steps.concept = { status: 'done' };
     run.state = { ...run.state, characterId: c.id, concept: { name: 'Kept Name' }, fillOnly: true };
     await runPipeline({ ...h.opts, run });
+    assert.ok(!h.calls[0].args.only.includes('description'), 'only empty fields are requested');
+    assert.ok(h.calls[0].args.only.includes('first_mes'));
     const d = h.project.characters[0].card.data;
     assert.equal(d.description, 'Author wrote this.');
     assert.equal(d.name, 'Kept Name');

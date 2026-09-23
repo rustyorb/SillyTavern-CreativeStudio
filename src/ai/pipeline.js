@@ -4,14 +4,16 @@
 
 import { clone, uid } from '../core/bytes.js';
 import { newCharacter, upsertArtifact, editArtifactField, findArtifact, logHistory, now } from '../core/project.js';
-import { emptyCardV3 } from '../core/card.js';
+import { emptyCardV3, tidyExamples } from '../core/card.js';
 import { newEntry } from '../core/lorebook.js';
 import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
 import { defaultScript } from '../core/regex.js';
 import { newSet, addQr, QR_FLAGS } from '../core/qr.js';
-import { dialText, cardDigest, CARD_FIELDS } from './tasks.js';
+import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle } from './tasks.js';
 
 const STRING_FIELDS = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions'];
+/** Without these the card is not playable; the card step re-asks for any that come back empty. */
+const MUST_HAVE = ['description', 'scenario', 'first_mes', 'mes_example'];
 
 function brief(state) {
     const p = state.premise;
@@ -64,14 +66,24 @@ export const STEPS = [
     },
     {
         id: 'card', label: 'Character card', task: 'character.expand', needs: ['concept'],
-        build: (s, p, dials) => ({ concept: { ...s.concept, story: brief(s) }, card: char(p, s)?.card, style: styleFrom(dials) }),
+        build: (s, p, dials) => {
+            const card = char(p, s)?.card;
+            // Filling gaps in an existing card: ask only for what is empty instead of rewriting everything and discarding it.
+            const gaps = s.fillOnly ? CORE_CARD_FIELDS.filter(k => (Array.isArray(card?.data[k]) ? !card.data[k].length : !String(card?.data[k] ?? '').trim())) : [];
+            return { concept: { ...s.concept, story: brief(s) }, card, style: styleFrom(dials), ...(gaps.length ? { only: gaps } : {}) };
+        },
+        missing: (p, s) => MUST_HAVE.filter(k => !String(char(p, s)?.card.data[k] ?? '').trim()),
         apply: (project, v, s) => {
             let next = project;
             const f = v.fields ?? {};
             const d0 = char(project, s).card.data;
             // fillOnly: developing an existing character never overwrites what the author (or an earlier run) wrote.
             const empty = k => !s.fillOnly || (Array.isArray(d0[k]) ? !d0[k].length : !String(d0[k] ?? '').trim());
-            for (const k of STRING_FIELDS) if (typeof f[k] === 'string' && f[k].trim() && empty(k) && !(s.fillOnly && k === 'name')) next = editArtifactField(next, 'characters', s.characterId, `card.data.${k}`, f[k], { actor: 'ai', summary: `Generated ${CARD_FIELDS[k] ?? k}` });
+            for (const k of STRING_FIELDS) {
+                if (typeof f[k] !== 'string' || !f[k].trim() || !empty(k) || (s.fillOnly && k === 'name')) continue;
+                const value = k === 'mes_example' ? tidyExamples(f[k], f.name || d0.name) : f[k];
+                next = editArtifactField(next, 'characters', s.characterId, `card.data.${k}`, value, { actor: 'ai', summary: `Generated ${CARD_FIELDS[k] ?? k}` });
+            }
             if (Array.isArray(f.tags) && f.tags.length && empty('tags')) next = editArtifactField(next, 'characters', s.characterId, 'card.data.tags', f.tags, { actor: 'ai', summary: 'Generated tags' });
             if (Array.isArray(f.alternate_greetings) && f.alternate_greetings.length && empty('alternate_greetings')) next = editArtifactField(next, 'characters', s.characterId, 'card.data.alternate_greetings', f.alternate_greetings.filter(x => typeof x === 'string' && x.trim()), { actor: 'ai', summary: 'Generated alternate greetings' });
             if (!char(next, s).card.data.creator) next = editArtifactField(next, 'characters', s.characterId, 'card.data.creator', 'Creative Studio', { actor: 'ai', summary: 'Creator' });
@@ -96,7 +108,7 @@ export const STEPS = [
         apply: (project, v, s) => {
             const world = { entries: {} };
             for (const e of v.entries) {
-                const entry = newEntry(world, { comment: e.comment, key: e.keys ?? [], keysecondary: e.secondary_keys ?? [], content: e.content, constant: !!e.constant });
+                const entry = newEntry(world, { comment: entryTitle(e), key: e.keys ?? [], keysecondary: e.secondary_keys ?? [], content: e.content, constant: !!e.constant });
                 entry.extensions = { studio: { category: e.category ?? '', rationale: e.rationale ?? '' } };
                 world.entries[entry.uid] = entry;
             }
@@ -173,7 +185,8 @@ export const STEPS = [
             let fixed = 0;
             for (const issue of v.issues ?? []) {
                 if (issue.replacement && CARD_FIELDS[issue.field] && issue.severity !== 'low') {
-                    next = editArtifactField(next, 'characters', s.characterId, `card.data.${issue.field}`, issue.replacement, { actor: 'ai', summary: `Revised ${CARD_FIELDS[issue.field]}: ${issue.problem}` });
+                    const value = issue.field === 'mes_example' ? tidyExamples(issue.replacement, char(next, s).card.data.name) : issue.replacement;
+                    next = editArtifactField(next, 'characters', s.characterId, `card.data.${issue.field}`, value, { actor: 'ai', summary: `Revised ${CARD_FIELDS[issue.field]}: ${issue.problem}` });
                     fixed++;
                 }
             }
@@ -220,7 +233,16 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
         save();
         try {
             const args = step.build(r.state, getProject(), r.dials ?? {});
-            const res = await runTask(step.task, args);
+            let res;
+            try {
+                res = await runTask(step.task, args);
+            } catch (e) {
+                // One automatic retry for a stuck or failed call, so a hands-free run survives a provider hiccup.
+                if (signal?.aborted) throw e;
+                r.steps[step.id] = { status: 'running', startedAt: r.steps[step.id].startedAt, retrying: e?.message ?? String(e) };
+                save();
+                res = await runTask(step.task, args);
+            }
             if (!res) throw new Error('No result');
             let newState = r.state;
             update(p => {
@@ -229,7 +251,23 @@ export async function runPipeline({ getProject, update, runTask, run, onRun = ()
                 return out.project;
             }, `generate: ${step.label}`);
             r.state = newState;
-            r.steps[step.id] = { status: 'done', endedAt: now(), model: res.generation?.label ?? '', durationMs: res.generation?.durationMs };
+            let durationMs = res.generation?.durationMs ?? 0;
+            // Models sometimes skip parts of a structured answer: ask again for exactly what is still missing.
+            let still = step.missing?.(getProject(), r.state) ?? [];
+            for (let attempt = 0; still.length && attempt < 2 && !signal?.aborted; attempt++) {
+                const fix = await runTask(step.task, { ...step.build(r.state, getProject(), r.dials ?? {}), only: still });
+                if (!fix) break;
+                const keep = r.state.fillOnly;
+                update(p => {
+                    const out = step.apply(p, fix.value, { ...r.state, fillOnly: true });
+                    newState = { ...out.state, fillOnly: keep };
+                    return out.project;
+                }, `generate: ${step.label} (missing parts)`);
+                r.state = newState;
+                durationMs += fix.generation?.durationMs ?? 0;
+                still = step.missing(getProject(), r.state);
+            }
+            r.steps[step.id] = { status: 'done', endedAt: now(), model: res.generation?.label ?? '', durationMs, ...(still.length ? { warning: `Still empty: ${still.join(', ')}` } : {}) };
         } catch (e) {
             r.steps[step.id] = { status: signal?.aborted ? 'cancelled' : 'failed', error: e?.message ?? String(e), endedAt: now() };
             if (signal?.aborted) { r.status = 'cancelled'; save(); return r; }

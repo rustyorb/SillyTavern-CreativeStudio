@@ -10,7 +10,7 @@ import { newRun } from '../../ai/pipeline.js';
 import {
     findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal,
 } from '../../core/project.js';
-import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3 } from '../../core/card.js';
+import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3, tidyExamples } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
 import { importCardFile, exportCard, EXPORT_KINDS } from '../../core/cardio.js';
 import { CARD_FIELDS, FIELD_LABELS } from '../../ai/tasks.js';
@@ -282,7 +282,7 @@ function AiField({ store, env, project, ch, field, label, rows = 6, hint, d, set
         const group = uid('grp');
         pushProposals(store, r.value.variants.slice(0, count).map(v => ({
             task: 'character.rewrite-field', title: `${label}: ${v.label || 'take'}`, group,
-            target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: v.text, rationale: v.rationale, generation: r.generation,
+            target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: field === 'mes_example' ? tidyExamples(v.text, ch.card.data.name) : v.text, rationale: v.rationale, generation: r.generation,
         })), count > 1 ? 'AI takes' : `AI ${empty ? 'wrote' : 'rewrote'} ${label}`, { forceReview: count > 1 });
         setOpen(false);
     };
@@ -317,7 +317,7 @@ function ConceptPanel({ store, env, project, ch }) {
         const specs = [];
         for (const [field, value] of Object.entries(r.value.fields ?? {})) {
             if (value == null || (Array.isArray(value) && !value.length) || value === '') continue;
-            specs.push({ task: 'character.expand', title: `Draft ${FIELD_LABELS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: value, rationale: r.value.rationale, generation: r.generation });
+            specs.push({ task: 'character.expand', title: `Draft ${FIELD_LABELS[field] ?? field}`, group, target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: field === 'mes_example' ? tidyExamples(value, ch.card.data.name) : value, rationale: r.value.rationale, generation: r.generation });
         }
         const applied = pushProposals(store, specs, 'AI draft fields');
         env.toast(applied.length ? `Wrote ${applied.length} fields (undo with Ctrl+Z)` : `${specs.length} field drafts ready for review in the inspector`, 'ok');
@@ -376,7 +376,7 @@ function CoreTab(p) {
             <${Button} kind="ai" icon="magnifying-glass-chart" label="Critique & fix" title=${isHandsFree(project) ? 'Reviews the card and applies the concrete fixes (undo with Ctrl+Z)' : 'Reviews the card and proposes fixes'} onClick=${critique} disabled=${ai.busy} />
             <${AiStatus} ai=${ai} />
         </div>
-        ${building && html`<div class="cs-muted cs-small"><span class="cs-spin"><${Icon} name="spinner" /></span> Building around ${d.name}: ${Object.entries(building.steps).filter(([, s]) => s.status === 'done').length} of ${Object.values(building.steps).filter(s => s.status !== 'skipped').length} steps done. Progress also shows in Project → Generate.</div>`}
+        ${building && html`<div class="cs-muted cs-small"><span class="cs-spin"><${Icon} name="spinner" /></span> Building around ${d.name}: ${building.selected.filter(id => building.steps[id]?.status === 'done').length} of ${building.selected.length} steps done. Progress also shows in Project → Generate.</div>`}
         ${ch.critique && html`<${Section} title=${`Critique · ${new Date(ch.critique.time).toLocaleString()}`}>
             ${ch.critique.strengths?.length > 0 && html`<div class="cs-small"><strong>Strengths:</strong> ${ch.critique.strengths.join(' · ')}</div>`}
             <${Diagnostics} items=${ch.critique.notes} />

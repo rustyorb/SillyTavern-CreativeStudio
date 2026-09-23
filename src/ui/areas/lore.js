@@ -14,6 +14,7 @@ import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
 import { listStWorlds, getStWorld, saveStWorld } from '../../st/live.js';
 import { recordBackup } from '../inspector.js';
 import { stContext, readStWorldInfoSettings } from '../../st/env.js';
+import { entryTitle } from '../../ai/tasks.js';
 
 export const newLorebookArtifact = name => ({ id: uid('lb'), name, data: { entries: {} }, origin: { kind: 'new' } });
 
@@ -109,7 +110,7 @@ function WorldDesigner({ store, env, project, select }) {
         if (!r) return;
         const world = { entries: {} };
         for (const e of r.value.entries) {
-            const entry = newEntry(world, { comment: e.comment, key: e.keys ?? [], keysecondary: e.secondary_keys ?? [], content: e.content, constant: !!e.constant, selective: true });
+            const entry = newEntry(world, { comment: entryTitle(e), key: e.keys ?? [], keysecondary: e.secondary_keys ?? [], content: e.content, constant: !!e.constant, selective: true });
             entry.extensions = { studio: { category: e.category ?? '', rationale: e.rationale ?? '' } };
             world.entries[entry.uid] = entry;
         }
@@ -497,9 +498,9 @@ function Extract({ store, project, lb }) {
         const group = uid('grp');
         const specs = r.value.entries.map(e => {
             const data = clone(lb.data);
-            const entry = newEntry(data, { comment: e.comment, key: e.keys ?? [], content: e.content });
+            const entry = newEntry(data, { comment: entryTitle(e), key: e.keys ?? [], content: e.content });
             entry.extensions = { studio: { evidence: e.evidence ?? '', rationale: e.rationale ?? '' } };
-            return { task: 'lore.extract', title: `Add entry: ${e.comment}`, group, target: { type: 'lorebooks', id: lb.id, path: `data.entries.${entry.uid}` }, after: entry, rationale: `${e.rationale ?? ''}${e.evidence ? ` — evidence: “${e.evidence}”` : ''}`, generation: r.generation };
+            return { task: 'lore.extract', title: `Add entry: ${entryTitle(e)}`, group, target: { type: 'lorebooks', id: lb.id, path: `data.entries.${entry.uid}` }, after: entry, rationale: `${e.rationale ?? ''}${e.evidence ? ` — evidence: “${e.evidence}”` : ''}`, generation: r.generation };
         });
         // Give each candidate a distinct uid so several can be accepted.
         let next = Math.max(-1, ...Object.keys(lb.data.entries ?? {}).map(Number)) + 1;

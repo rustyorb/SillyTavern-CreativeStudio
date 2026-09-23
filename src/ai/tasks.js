@@ -8,6 +8,8 @@ const CRAFT = `You are a collaborator for a SillyTavern roleplay author. Write f
 - Serve the roleplay: give the model concrete, actionable material (behaviours, speech patterns, pressures, secrets), not adjectives.
 - Prefer specific, surprising, internally consistent details over genre defaults. Avoid purple prose and stock phrases ("a mix of", "sends shivers", "barely above a whisper", "ministrations", "testament to").
 - Keep {{char}} and {{user}} macros where a card would use them. Never write {{user}}'s actions, thoughts or dialogue in greetings or examples beyond a minimal hook.
+- Roleplay formatting unless the author asks otherwise: third-person narration in *asterisks* or plain prose, and every spoken line in "double quotes". Greetings and examples are scenes, not summaries.
+- Example dialogue (mes_example) format, exactly: blocks that start with a line <START>, then lines "{{user}}: ..." and "{{char}}: ..." (name, colon, text). There is no {{system}} macro; put scene-setting inside a {{char}} line as narration.
 - Respect the author's stated premise, tone, rating and constraints exactly; if something is ambiguous, choose the most interesting reading and say so in the rationale.`;
 
 export function cardDigest(card, { full = false } = {}) {
@@ -44,9 +46,14 @@ export function dialText(dials = {}) {
     return parts.length ? `Author's choices:\n${parts.map(p => `- ${p}`).join('\n')}\n` : '';
 }
 
-function loreDigest(entries, limit = 40) {
-    return entries.slice(0, limit).map(e => `- [${e.uid}] ${e.comment || '(untitled)'} | keys: ${(e.key ?? []).join(', ')}${e.constant ? ' | constant' : ''}\n  ${String(e.content ?? '').slice(0, 400).replace(/\n/g, ' ')}`).join('\n');
+/** Entries for a prompt. Long content is abbreviated with an explicit [...] marker so models don't mistake it for a defect. */
+function loreDigest(entries, limit = 40, chars = 400) {
+    return entries.slice(0, limit).map(e => {
+        const c = String(e.content ?? '').replace(/\n/g, ' ');
+        return `- [${e.uid}] ${e.comment || '(untitled)'} | keys: ${(e.key ?? []).join(', ')}${e.constant ? ' | constant' : ''}\n  ${c.length > chars ? `${c.slice(0, chars)} [...]` : c}`;
+    }).join('\n');
 }
+const ABBREVIATED = 'Lore content may be shown abbreviated; "[...]" marks text omitted from this view, which is not a defect.';
 
 export const CARD_FIELDS = {
     description: 'Description',
@@ -61,6 +68,17 @@ export const CARD_FIELDS = {
 
 /** Display labels for every card field an AI task may propose (CARD_FIELDS stays limited to rewritable text). */
 export const FIELD_LABELS = { ...CARD_FIELDS, name: 'Name', tags: 'Tags', alternate_greetings: 'Alternate greetings', group_only_greetings: 'Group-only greetings', nickname: 'Nickname' };
+
+/** The fields a playable card needs; card drafting asks for all of them and generation repairs any left empty. */
+export const CORE_CARD_FIELDS = ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'tags'];
+
+/** A short entry title from AI lore output: title, else a short comment, else the first key. */
+export function entryTitle(e) {
+    const t = String(e?.title || e?.comment || '').trim();
+    const key = (e?.keys ?? e?.key ?? [])[0];
+    if (!t) return key || 'Entry';
+    return t.length > 60 && key ? key : t;
+}
 
 export const TASKS = {
     // ---------------------------------------------------------------- characters
@@ -118,10 +136,13 @@ export const TASKS = {
                 rationale: S,
             },
         },
-        build: ({ concept, card, style = '' }) => ({
-            system: `${CRAFT}\nYou turn a concept into Character Card V3 field drafts. Description carries appearance, background, behaviour and speech patterns; scenario states the current situation; first_mes opens a scene with a hook and room for {{user}} to act (roughly 120-300 words); mes_example uses <START> blocks with {{char}}/{{user}} lines demonstrating voice. Keep permanent fields (description+personality+scenario) within about 1500 tokens.`,
-            user: `Concept:\n${typeof concept === 'string' ? concept : JSON.stringify(concept, null, 1)}\n${card ? `\nExisting card (keep what works, fill gaps):\n${cardDigest(card)}\n` : ''}${style ? `\nStyle requirements: ${style}\n` : ''}\nReturn fields only for the parts you are drafting, plus a short rationale.`,
-        }),
+        build: ({ concept, card, style = '', only = null }) => {
+            const want = only?.length ? only : CORE_CARD_FIELDS;
+            return {
+                system: `${CRAFT}\nYou turn a concept into Character Card V3 field drafts. Description carries appearance, background, behaviour and speech patterns; scenario states the current situation; first_mes opens a scene with a hook and room for {{user}} to act (roughly 120-300 words); mes_example uses <START> blocks with {{char}}/{{user}} lines demonstrating voice. Keep permanent fields (description+personality+scenario) within about 1500 tokens.`,
+                user: `Concept:\n${typeof concept === 'string' ? concept : JSON.stringify(concept, null, 1)}\n${card ? `\nExisting card (keep what works, stay consistent with it):\n${cardDigest(card)}\n` : ''}${style ? `\nStyle requirements: ${style}\n` : ''}\n${only?.length ? `These fields are still EMPTY and must be written now: ${want.join(', ')}. Return exactly these fields, each non-empty.` : `Write every one of these fields, each non-empty: ${want.join(', ')}. You may add system_prompt or creator_notes if useful.`} Include a short rationale.`,
+            };
+        },
     },
 
     'character.rewrite-field': {
@@ -172,7 +193,7 @@ export const TASKS = {
         },
         build: ({ card, lore = [] }) => ({
             system: `${CRAFT}\nYou are a strict but constructive card reviewer. Look for: contradictions between fields; vague adjectives instead of behaviour; greetings that act for {{user}}; missing scenario pressure; example dialogue that does not show the voice; wasted tokens; lore that contradicts the card. When a concrete fix is short, give it as replacement text for the field.`,
-            user: `Card:\n${cardDigest(card, { full: true })}\n${lore.length ? `\nLinked lore entries:\n${loreDigest(lore)}` : ''}\n\nList strengths and issues. Use field names from: ${Object.keys(CARD_FIELDS).join(', ')}, alternate_greetings, lore.`,
+            user: `Card:\n${cardDigest(card, { full: true })}\n${lore.length ? `\nLinked lore entries (${ABBREVIATED}):\n${loreDigest(lore)}` : ''}\n\nList strengths and issues. Use field names from: ${Object.keys(CARD_FIELDS).join(', ')}, alternate_greetings, lore.`,
         }),
     },
 
@@ -189,14 +210,15 @@ export const TASKS = {
                 entries: {
                     type: 'array', minItems: 1,
                     items: {
-                        type: 'object', required: ['comment', 'keys', 'content'],
-                        properties: { comment: S, keys: SA, secondary_keys: SA, content: S, constant: { type: 'boolean' }, category: S, rationale: S },
+                        type: 'object', required: ['title', 'keys', 'content'],
+                        properties: { title: S, keys: SA, secondary_keys: SA, content: S, constant: { type: 'boolean' }, category: S, rationale: S },
                     },
                 },
             },
         },
         build: ({ premise, card, existing = [], count = 8 }) => ({
             system: `${CRAFT}\nYou design World Info (lorebook) entries for SillyTavern. Entries trigger when a key appears in recent chat, so:
+- title is a short name for the entry (1-5 words: the place, person, faction or rule itself), not a sentence.
 - keys are words/phrases that would naturally appear in chat when the topic is relevant (names, places, nicknames, plural forms); avoid overly common words.
 - content is compact, factual, written for the model (not the reader); 40-150 words; one topic per entry.
 - mark constant true only for short, always-relevant world rules.
@@ -212,10 +234,10 @@ export const TASKS = {
         maxTokens: 4500,
         schema: {
             type: 'object', required: ['entries'],
-            properties: { entries: { type: 'array', items: { type: 'object', required: ['comment', 'keys', 'content'], properties: { comment: S, keys: SA, content: S, evidence: S, rationale: S } } } },
+            properties: { entries: { type: 'array', items: { type: 'object', required: ['title', 'keys', 'content'], properties: { title: S, keys: SA, content: S, evidence: S, rationale: S } } } },
         },
         build: ({ text, existing = [] }) => ({
-            system: `${CRAFT}\nYou extract facts that recur or matter from writing or chat logs and turn them into World Info entry candidates. Quote a short evidence snippet for each. Skip one-off details.`,
+            system: `${CRAFT}\nYou extract facts that recur or matter from writing or chat logs and turn them into World Info entry candidates. Give each a short title (1-5 words, the thing itself). Quote a short evidence snippet for each. Skip one-off details.`,
             user: `Source text:\n"""\n${String(text).slice(0, 24000)}\n"""\n${existing.length ? `\nAlready covered:\n${loreDigest(existing)}` : ''}\n\nReturn candidate entries.`,
         }),
     },
@@ -236,7 +258,7 @@ export const TASKS = {
         },
         build: ({ entries, card }) => ({
             system: `${CRAFT}\nYou audit a lorebook. Report contradictions between entries (or with the card), duplicated coverage, important gaps, and key problems (keys too generic, missing obvious synonyms, keys that never appear in the entry's own topic).`,
-            user: `${card ? `Card:\n${cardDigest(card)}\n\n` : ''}Entries:\n${loreDigest(entries, 80)}\n\nReport findings with the entry uids involved.`,
+            user: `${card ? `Card:\n${cardDigest(card)}\n\n` : ''}Entries (${ABBREVIATED}):\n${loreDigest(entries, 80, 800)}\n\nReport findings with the entry uids involved.`,
         }),
     },
 

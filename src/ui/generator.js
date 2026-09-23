@@ -51,14 +51,42 @@ export async function startGeneration(store, env, run) {
     }
 }
 
-/** Build everything around an existing character (card fields → openings → lore → preset → regex → QR → images → polish). */
-export function developCharacter(store, env, characterId, { steps = DEFAULT_STEPS.filter(s => !['premise', 'concept'].includes(s)), dials } = {}) {
+/** Which generation steps an existing character still needs (so building "the rest" never duplicates artifacts). */
+export function missingSteps(ch) {
+    const d = ch?.card?.data ?? {};
+    const has = v => (Array.isArray(v) ? v.length > 0 : !!String(v ?? '').trim());
+    const need = [];
+    if (!['description', 'scenario', 'first_mes', 'mes_example'].every(k => has(d[k]))) need.push('card');
+    if ((d.alternate_greetings?.length ?? 0) < 2) need.push('greetings');
+    if (!ch?.links?.lorebooks?.length && !d.character_book?.entries?.length) need.push('lore');
+    if (!ch?.links?.presets?.length) need.push('preset');
+    if (!d.extensions?.regex_scripts?.length) need.push('regex');
+    if (!ch?.links?.qrSets?.length) need.push('qr');
+    if (!ch?.imagePrompts?.length) need.push('images');
+    if (need.length) need.push('polish');
+    return need;
+}
+
+/** Build everything around an existing character that it does not have yet (card gaps → openings → lore → preset → regex → QR → images → polish). */
+export function developCharacter(store, env, characterId, { steps, dials } = {}) {
     const p = store.get();
     const ch = p.characters.find(c => c.id === characterId);
+    steps ??= missingSteps(ch);
+    if (!steps.length) {
+        env.toast(`${ch?.card.data.name ?? 'This character'} already has everything: card, openings, lore, preset, regex, Quick Replies and image prompts.`, 'ok', 6000);
+        return Promise.resolve({ status: 'done', steps: {} });
+    }
     const run = newRun({ idea: p.premise ?? '', dials: dials ?? p.lastDials ?? {}, steps });
     run.steps.premise = { status: 'done' };
     run.steps.concept = { status: 'done' };
-    run.state = { ...run.state, characterId, fillOnly: !!(ch?.card.data.description?.trim() || ch?.card.data.first_mes?.trim()), concept: ch?.concept ?? { name: ch?.card.data.name, hook: ch?.card.data.description?.slice(0, 300) ?? '' }, premise: p.brief ?? (p.premise ? { title: p.name, logline: '', premise: p.premise } : null) };
+    const lb = ch?.links?.lorebooks?.[0];
+    const pr = ch?.links?.presets?.[0];
+    run.state = {
+        ...run.state, characterId, lorebookId: lb, presetId: pr,
+        fillOnly: !!(ch?.card.data.description?.trim() || ch?.card.data.first_mes?.trim()),
+        concept: ch?.concept ?? { name: ch?.card.data.name, hook: ch?.card.data.description?.slice(0, 300) ?? '' },
+        premise: p.brief ?? (p.premise ? { title: p.name, logline: '', premise: p.premise } : null),
+    };
     return startGeneration(store, env, run).then(r => {
         if (r.status === 'done') env.toast(`${ch?.card.data.name ?? 'Character'} is fully built: card, openings, lore, preset, regex, Quick Replies and image prompts.`, 'ok', 8000);
         else if (r.status === 'partial') env.toast('Built with some failed steps; see Project → Generate to retry them.', 'error', 8000);
@@ -128,6 +156,8 @@ export function Generator({ store, env, project, select }) {
                 return html`<li key=${s.id} class=${cx('cs-gen-step', `is-${st.status}`)}>
                     <span class=${st.status === 'running' ? 'cs-spin' : ''}><${Icon} name=${STATUS_ICON[st.status] ?? 'circle'} /></span>
                     <span class="cs-grow">${s.label}</span>
+                    ${st.status === 'running' && st.retrying && html`<span class="cs-warn-text cs-small" title=${st.retrying}>retrying: ${String(st.retrying).slice(0, 60)}</span>`}
+                    ${st.warning && html`<span class="cs-warn-text cs-small" title=${st.warning}><${Icon} name="triangle-exclamation" /> ${st.warning}</span>`}
                     ${st.status === 'done' && st.durationMs && html`<span class="cs-muted cs-small">${Math.round(st.durationMs / 1000)}s</span>`}
                     ${(st.status === 'failed' || st.status === 'blocked') && html`<span class="cs-err-text cs-small" title=${st.error}>${String(st.error ?? '').slice(0, 70)}</span>`}
                     ${st.status === 'failed' && !isRunning && html`<${Button} small icon="rotate" label="Retry" onClick=${() => retry(s.id)} />`}

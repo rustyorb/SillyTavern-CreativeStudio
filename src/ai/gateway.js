@@ -14,12 +14,16 @@ import { validate, coerce, schemaToPrompt } from './schema.js';
 import { hashString } from '../core/bytes.js';
 
 export class AiError extends Error {
-    constructor(message, { raw = '', meta = {}, cause } = {}) {
+    constructor(message, { raw = '', meta = {}, cause, timeout = false } = {}) {
         super(message, { cause });
         this.raw = raw;
         this.meta = meta;
+        this.timeout = timeout;
     }
 }
+
+/** Default time limit for one model call. Providers occasionally accept a request and never answer. */
+export const DEFAULT_TIMEOUT_MS = 240000;
 
 /** Describe the route that would be used, for the UI. */
 export function describeRoute(ctx, profileId) {
@@ -137,10 +141,11 @@ export async function runChat(ctx, { messages, profileId = '', maxTokens = 400, 
  * @param {AbortSignal} [req.signal]
  * @param {(s: string) => void} [req.onStatus]
  * @param {boolean} [req.repair] one repair round-trip when output is invalid
+ * @param {number} [req.timeoutMs] give up on a single call after this long (0 = never)
  * @returns {Promise<{ value: any, raw: string, meta: object }>}
  */
 export async function runStructured(ctx, req) {
-    const { schema, schemaName = 'result', profileId = '', maxTokens = 2048, signal, onStatus = () => {}, repair = true } = req;
+    const { schema, schemaName = 'result', profileId = '', maxTokens = 2048, signal, onStatus = () => {}, repair = true, timeoutMs = DEFAULT_TIMEOUT_MS } = req;
     const route = describeRoute(ctx, profileId);
     if (!route.ok && route.mode === 'profile') throw new AiError(route.label, { meta: route });
     const messages = buildMessages(req);
@@ -148,22 +153,41 @@ export async function runStructured(ctx, req) {
     const started = Date.now();
     const meta = { ...route, promptHash, attempts: 0, repaired: [], startedAt: new Date(started).toISOString() };
 
+    /** Reject after timeoutMs; onTimeout lets the caller abort the underlying request where it can. */
+    const limited = (promise, onTimeout) => {
+        if (!timeoutMs) return promise;
+        let timer;
+        const expired = new Promise((_, rej) => {
+            timer = setTimeout(() => {
+                onTimeout?.();
+                rej(new AiError(`No answer after ${Math.round(timeoutMs / 1000)} s: the model or provider seems stuck. Try again, or choose a faster model.`, { meta, timeout: true }));
+            }, timeoutMs);
+        });
+        return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+    };
+
     const callOnce = async msgs => {
         meta.attempts++;
         if (signal?.aborted) throw new AiError('Cancelled', { meta });
         if (route.mode === 'profile') {
             const override = {};
             if (schema && route.schemaEnforced) override.json_schema = { name: schemaName, value: schema, strict: false };
+            const inner = new AbortController();
+            const relay = () => inner.abort();
+            signal?.addEventListener('abort', relay, { once: true });
             let raw;
             try {
-                raw = await ctx.ConnectionManagerRequestService.sendRequest(profileId, msgs, maxTokens, { stream: false, signal, extractData: false }, override);
+                raw = await limited(ctx.ConnectionManagerRequestService.sendRequest(profileId, msgs, maxTokens, { stream: false, signal: inner.signal, extractData: false }, override), relay);
             } catch (e) {
+                if (e instanceof AiError) throw e;
                 const cause = e?.cause?.message ?? e?.message;
                 throw new AiError(signal?.aborted ? 'Cancelled' : `Request failed: ${cause}`, { meta, cause: e });
+            } finally {
+                signal?.removeEventListener('abort', relay);
             }
             return textFromRaw(ctx, raw, route.schemaEnforced ? 'openai' : 'textgenerationwebui');
         }
-        // Main API route; not abortable inside ST, so race it against our signal.
+        // Main API route; not abortable inside ST, so race it against our signal and the time limit.
         const gen = ctx.generateRaw({
             prompt: msgs,
             responseLength: maxTokens,
@@ -171,7 +195,7 @@ export async function runStructured(ctx, req) {
         });
         const abort = new Promise((_, rej) => signal?.addEventListener('abort', () => rej(new AiError('Cancelled (the request may still finish in the background)', { meta })), { once: true }));
         try {
-            return String(await Promise.race([gen, abort]));
+            return String(await limited(Promise.race([gen, abort])));
         } catch (e) {
             if (e instanceof AiError) throw e;
             throw new AiError(`Request failed: ${e?.message ?? e}`, { meta, cause: e });

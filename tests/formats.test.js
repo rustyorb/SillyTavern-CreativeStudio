@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { readCardChunks, writeCardChunks, extractChunks, blankPng, isPng } from '../src/core/png.js';
-import { normalizeToV3, validateCardV3, toSpecV2, toSpecV3, toSillyTavernShape, detectCardVersion, emptyCardV3, splitExamples, joinExamples } from '../src/core/card.js';
+import { normalizeToV3, validateCardV3, toSpecV2, toSpecV3, toSillyTavernShape, detectCardVersion, emptyCardV3, splitExamples, joinExamples, tidyExamples } from '../src/core/card.js';
 import { readCharx, writeCharx, suggestedAssetPath } from '../src/core/charx.js';
 import { textToBase64, base64ToText, stableStringify } from '../src/core/bytes.js';
 
@@ -146,4 +146,16 @@ test('example dialogue split/join', () => {
     const parts = splitExamples(ex);
     assert.equal(parts.length, 2);
     assert.deepEqual(splitExamples(joinExamples(parts)), parts);
+});
+
+test('tidyExamples repairs the slips models make (real output from a DeepSeek run)', () => {
+    const raw = "<START>\n{{system}} The lantern room during a storm.\n{{user}} I heard a radio transmission earlier.\n{{char}} My hand stills. \"Static. Fishing boats.\"\n<START>\n{{system}} Cillian is in the supply room.\n{{user}} The pantries are full.\nCillian: \"We look after our own.\"";
+    const t = tidyExamples(raw, 'Cillian');
+    assert.equal(t, '<START>\n{{char}}: *The lantern room during a storm.*\n{{user}}: I heard a radio transmission earlier.\n{{char}}: My hand stills. "Static. Fishing boats."\n<START>\n{{char}}: *Cillian is in the supply room.*\n{{user}}: The pantries are full.\n{{char}}: "We look after our own."');
+    assert.ok(!/\{\{system\}\}/.test(t));
+    // narration merges into a following {{char}} line; clean input is unchanged; missing <START> is added
+    assert.equal(tidyExamples('{{system}}: Night.\n{{char}}: "Go."'), '<START>\n{{char}}: *Night.* "Go."');
+    const clean = '<START>\n{{user}}: hi\n{{char}}: yo';
+    assert.equal(tidyExamples(clean), clean);
+    assert.equal(tidyExamples(''), '');
 });
