@@ -4,9 +4,9 @@
 
 | Suite | Result | What it covers |
 |---|---|---|
-| Unit (`npm test`, Node 24) | **62 / 62 pass** | PNG chunks, V1/V2/V3 normalization, CHARX round trips, card export shapes; project/proposal/provenance/snapshot model; lorebook defaults, lint, card⇄world conversion, activation simulation (recursion, groups, budget, placement order) on ST's Eldoria; regex engine semantics, stage matrix, lint, order conflicts; CC preset lint/assembly/diff on ST's Default preset and the 130-prompt *Deus ex Machina* community preset (lossless); TC fallback rendering with ST's ChatML templates; STscript scanner on a script ST's real parser accepts; QR id quirk and v1 migration; bundle zip round trip; sandbox playtest assembly; AI gateway routes, lenient JSON, schema coercion and repair; storage save/load, snapshots, two-tab conflict, offline fallback |
+| Unit (`npm test`, Node 24) | **64 / 64 pass** | PNG chunks, V1/V2/V3 normalization, CHARX round trips, card export shapes; project/proposal/provenance/snapshot model; lorebook defaults, lint, card⇄world conversion, activation simulation (recursion, groups, budget, placement order) on ST's Eldoria; regex engine semantics, stage matrix, lint, order conflicts; CC preset lint/assembly/diff on ST's Default preset and the 130-prompt *Deus ex Machina* community preset (lossless); TC fallback rendering with ST's ChatML templates; STscript scanner on a script ST's real parser accepts; QR id quirk and v1 migration; bundle zip round trip; sandbox playtest assembly; AI gateway routes, lenient JSON, schema coercion and repair; storage save/load, snapshots, two-tab conflict, offline fallback |
 | Live integration (`tests/live/live-integration.js`, in a running ST 1.19.0) | **13 / 13 pass**, leaves no `CSTEST_*` artifacts | ST context surface; reading ST cards; creating a character from a spec-V3 PNG with **zero stored differences**; merge-attributes apply (array replace, key unset) and backup restore; World Info save/read-back; preset save; studio CHARX accepted by ST's importer; bundle World Info accepted by `/api/worldinfo/import`; real STscript parser errors; Quick Reply live install; Text Completion preview rendered by ST's own functions; live WI settings; dry-run prompt capture |
-| Live AI (ST → Custom OpenAI-compatible → Ollama qwen3:8b, CPU-bound) | Works end to end | Ideation via a separate **connection profile** with `json_schema` → 3 distinct concepts (438 s); concept → 11 field proposals (300 s); accepting a proposal updates the card and records provenance |
+| Live AI (ST → Custom OpenAI-compatible → Ollama qwen3:8b, CPU-bound) | Works end to end | Ideation via a separate **connection profile** with `json_schema` → 3 distinct concepts (438 s); concept → 11 field proposals (300 s); accepting a proposal updates the card and records provenance; **sandbox playtest turn** (card + 3 activated lore entries + Default preset, 5 messages) → in-character reply that uses the activated lore (178 s) |
 | UI walkthrough (browser) | Every workshop opens and works | Pull from ST, compatibility matrix, embedded book → project lorebook, activation preview explaining recursion/whole-word effects, Prompt Manager + assembled preview + lint, regex stage preview in a worker, STscript live parse + effects + enum lint, bundle build with real avatar |
 
 ## Feature status
@@ -59,10 +59,10 @@ Legend: ✅ implemented and verified (unit and/or live) · 🟡 implemented, par
 - ✅ Apply to SillyTavern: reviewed plan with per-step opt-out, snapshot first, per-item backups and restore
 - ✅ Snapshots, undo/redo, provenance history, multi-tab conflict protection
 - ✅ Playtest: sandbox runs through any profile with full configuration capture, AI-played user, scripted scenarios, prompt inspection per reply, live ST chat capture with active config + dry-run prompt, ratings/notes, side-by-side compare
-- 🟡 A multi-turn sandbox playtest against a real model was not run end to end in this session (the local model was CPU-bound); each piece (assembly, gateway chat route, reply post-processing) is unit/live verified
+- ✅ Sandbox playtest turn verified against a real model (single turn; multi-turn scenarios use the same path, run time was CPU-bound)
 
 ## Known gaps and next steps
-1. Run a full sandbox playtest and a live `/imagine` generation on a machine with a GPU-backed model and an image backend.
+1. Exercise `/imagine` image generation with a configured Image Generation backend, and a multi-turn scenario on a GPU-backed model.
 2. Claude Fable 5.1 native structured output in ST 1.19 may return `{}` (suspected ST client/server mismatch); the gateway already parses raw text, but this is unverified against the real API.
 3. (Done) Assembled-preview token counts now use ST’s tokenizer.
 4. The activation simulator does not track sticky/cooldown state across turns; playtests could feed turn-by-turn state.
