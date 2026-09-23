@@ -72,6 +72,14 @@ export const FIELD_LABELS = { ...CARD_FIELDS, name: 'Name', tags: 'Tags', altern
 /** The fields a playable card needs; card drafting asks for all of them and generation repairs any left empty. */
 export const CORE_CARD_FIELDS = ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'tags'];
 
+/**
+ * Trigger keys from AI lore output. Models use "secondary keys" for synonyms, but in SillyTavern secondary keys are an
+ * AND/NOT filter that stops the entry firing on its primary key alone; so every key becomes a primary key.
+ */
+export function entryKeys(e) {
+    return [...new Set([...(e?.keys ?? []), ...(e?.secondary_keys ?? [])].map(k => String(k).trim()).filter(Boolean))];
+}
+
 /** A short entry title from AI lore output: title, else a short comment, else the first key. */
 export function entryTitle(e) {
     const t = String(e?.title || e?.comment || '').trim();
@@ -211,7 +219,7 @@ export const TASKS = {
                     type: 'array', minItems: 1,
                     items: {
                         type: 'object', required: ['title', 'keys', 'content'],
-                        properties: { title: S, keys: SA, secondary_keys: SA, content: S, constant: { type: 'boolean' }, category: S, rationale: S },
+                        properties: { title: S, keys: SA, content: S, constant: { type: 'boolean' }, category: S, rationale: S },
                     },
                 },
             },
@@ -219,7 +227,7 @@ export const TASKS = {
         build: ({ premise, card, existing = [], count = 8 }) => ({
             system: `${CRAFT}\nYou design World Info (lorebook) entries for SillyTavern. Entries trigger when a key appears in recent chat, so:
 - title is a short name for the entry (1-5 words: the place, person, faction or rule itself), not a sentence.
-- keys are words/phrases that would naturally appear in chat when the topic is relevant (names, places, nicknames, plural forms); avoid overly common words.
+- keys are words/phrases that would naturally appear in chat when the topic is relevant (names, places, nicknames, plural forms); any one key activates the entry, so list every variant as a key; avoid overly common words.
 - content is compact, factual, written for the model (not the reader); 40-150 words; one topic per entry.
 - mark constant true only for short, always-relevant world rules.
 - do not duplicate what the character card already says.`,

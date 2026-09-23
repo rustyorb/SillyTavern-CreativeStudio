@@ -9,7 +9,7 @@ import { newEntry } from '../core/lorebook.js';
 import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
 import { defaultScript } from '../core/regex.js';
 import { newSet, addQr, QR_FLAGS } from '../core/qr.js';
-import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle } from './tasks.js';
+import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle, entryKeys } from './tasks.js';
 
 const STRING_FIELDS = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions'];
 /** Without these the card is not playable; the card step re-asks for any that come back empty. */
@@ -108,7 +108,7 @@ export const STEPS = [
         apply: (project, v, s) => {
             const world = { entries: {} };
             for (const e of v.entries) {
-                const entry = newEntry(world, { comment: entryTitle(e), key: e.keys ?? [], keysecondary: e.secondary_keys ?? [], content: e.content, constant: !!e.constant });
+                const entry = newEntry(world, { comment: entryTitle(e), key: entryKeys(e), content: e.content, constant: !!e.constant });
                 entry.extensions = { studio: { category: e.category ?? '', rationale: e.rationale ?? '' } };
                 world.entries[entry.uid] = entry;
             }

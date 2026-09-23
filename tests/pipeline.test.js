@@ -161,3 +161,17 @@ test('fillOnly never overwrites fields that already have content', async () => {
     assert.equal(d.name, 'Kept Name');
     assert.equal(d.scenario, 'Storm night.'); // empty field filled
 });
+
+test('AI lore keys: "secondary" synonyms become primary keys, so an entry fires on any of them', async () => {
+    const { entryKeys } = await import('../src/ai/tasks.js');
+    const { simulateActivation, WI_SETTINGS_DEFAULTS } = await import('../src/core/lorebook.js');
+    const h = harness({ 'lore.structure': { entries: [{ title: "Serpent's Maw", keys: ["Serpent's Maw"], secondary_keys: ['the Maw', 'hidden cove'], content: 'A cleft in the cliffs.' }] } });
+    await runPipeline({ ...h.opts, run: newRun({ steps: ['premise', 'concept', 'card', 'lore'] }) });
+    const world = h.project.lorebooks[0].data;
+    const e = Object.values(world.entries)[0];
+    assert.deepEqual(e.key, ["Serpent's Maw", 'the Maw', 'hidden cove']);
+    assert.deepEqual(e.keysecondary, []);
+    const r = simulateActivation({ books: [{ name: 'b', world }], chat: [{ name: 'User', mes: 'Take me to the hidden cove.' }], settings: { ...WI_SETTINGS_DEFAULTS }, maxContext: 8192, generationType: 'normal', probabilityMode: 'assume', random: () => 0.5 });
+    assert.equal(r.results.find(x => x.entry.uid === e.uid).status, 'activated');
+    assert.deepEqual(entryKeys({ keys: ['a', ' a '], secondary_keys: ['b'] }), ['a', 'b']);
+});

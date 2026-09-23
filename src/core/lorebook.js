@@ -140,6 +140,9 @@ export function lintWorld(world) {
             keyOwners.get(norm).push(u);
         }
         if (e.selective && e.keysecondary?.length && !(e.key ?? []).length) add('warn', u, 'Secondary keys without primary keys have no effect.', 'keysecondary');
+        if (e.selective && e.keysecondary?.length && (e.key ?? []).length && !e.constant && (e.selectiveLogic ?? LOGIC.AND_ANY) === LOGIC.AND_ANY) {
+            add('info', u, `Fires only when a primary key AND one of the secondary keys (${e.keysecondary.slice(0, 3).join(', ')}) appear together. If the secondary keys are synonyms, move them to the primary keys.`, 'keysecondary');
+        }
         if (e.position === POSITION.outlet && !String(e.outletName ?? '').trim()) add('error', u, 'Outlet position without an outlet name is skipped by ST.', 'outletName');
         if (e.position !== POSITION.atDepth && e.depth !== 4 && e.depth != null) add('info', u, `Depth ${e.depth} only matters for position "At chat depth".`, 'depth');
         if (e.useProbability && (e.probability < 0 || e.probability > 100)) add('error', u, 'Probability must be 0–100.', 'probability');

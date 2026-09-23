@@ -14,9 +14,16 @@ import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
 import { listStWorlds, getStWorld, saveStWorld } from '../../st/live.js';
 import { recordBackup } from '../inspector.js';
 import { stContext, readStWorldInfoSettings } from '../../st/env.js';
-import { entryTitle } from '../../ai/tasks.js';
+import { entryTitle, entryKeys } from '../../ai/tasks.js';
 
 export const newLorebookArtifact = name => ({ id: uid('lb'), name, data: { entries: {} }, origin: { kind: 'new' } });
+
+/** Compact reason for the chain view; the full text stays in the tooltip. */
+function shortReason(reason = '') {
+    const m = reason.match(/^Primary matched \((.+?)\) but secondary logic (.+?) failed/);
+    if (m) return `“${m[1]}” matched, but ${m[2]} needs a secondary key too`;
+    return reason.length > 70 ? `${reason.slice(0, 70)}…` : reason;
+}
 
 function linkLorebook(store, characterId, lorebookId) {
     store.update(p => {
@@ -444,7 +451,7 @@ function ActivationChain({ result, multi }) {
             <div class="cs-chain-lane-head">Did not fire</div>
             ${cold.slice(0, 12).map(r => html`<div class="cs-chain-node" key=${`${r.entry.world}.${r.entry.uid}`} title=${r.reason}>
                 <span class="cs-chain-name">${r.entry.comment || `#${r.entry.uid}`}</span>
-                <div class="cs-small cs-muted">${r.status === 'miss' ? 'no key in scan window' : r.reason.slice(0, 60)}</div>
+                <div class="cs-small cs-muted">${r.status === 'miss' && !/^Primary matched/.test(r.reason ?? '') ? 'no key in scan window' : shortReason(r.reason)}</div>
             </div>`)}
             ${cold.length > 12 && html`<div class="cs-muted cs-small">+${cold.length - 12} more</div>`}
         </div>`}
