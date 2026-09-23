@@ -14,7 +14,7 @@ Then it critiques its own work and fixes it. You steer; the AI writes.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-97%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-112%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -107,6 +107,7 @@ Ten steps, each one a structured AI call whose output becomes a real SillyTavern
 | **Quick Replies** | Story tools as STscript buttons, checked by SillyTavern's own parser | Quick Reply set linked to the character |
 | **Images** | Avatar, full-body and scene prompts | Ready for ST's Image Generation, or any image tool |
 | **Polish** | A strict self-critique; concrete fixes get applied | Revised fields + notes you can read (on a character you wrote yourself, the fixes wait for your OK) |
+| **Portrait** *(with ComfyUI)* | Paints the avatar from the image prompts | The character's avatar, plus a gallery |
 
 **It is built to finish.** If the model skips part of an answer, the step asks again for exactly what is missing.
 If a provider hangs, the call times out and the step retries once. (On SillyTavern's main connection, where a request
@@ -155,6 +156,36 @@ A taste of the first message:
 
 <div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
 
+## ✦ Pictures, too
+
+<div align="center">
+  <img src="docs/assets/pictures.webp" alt="One generated character: an avatar, a full-body picture and a workshop scene, and below them eight transparent expression sprites (neutral, joy, love, surprise, embarrassment, fear, sadness, anger) that all share one face" width="100%" />
+  <br />
+  <sub><i>Real output: Tinker from</i> The Glitch That Gnaws<i>, painted on a laptop RTX 5070 Ti through ComfyUI. About 30 s for a portrait, then about 16 s per sprite.</i></sub>
+</div>
+
+<br />
+
+Connect a **ComfyUI** (plug icon → **Images** → ComfyUI → your address → **Connect**) and the studio paints as well as writes.
+**You never touch a workflow:** the studio builds them in code.
+
+- **Portraits, full body and scenes.** The AI writes the prompts in the style your checkpoint wants: score tags for
+  Pony, booru tags for Illustrious, plain sentences for realistic SDXL. Fast DMD2/Lightning checkpoints get fast
+  sampling, and a second 1.5× pass sharpens portraits.
+- **Expression sprites that keep one face.** 8 core moods or all 28 of SillyTavern's. Every sprite starts from the
+  same portrait, so hair, face and outfit stay put. Backgrounds are transparent when ComfyUI has the
+  *ComfyUI Essentials* background-removal nodes.
+- **Straight into SillyTavern.** *Install in SillyTavern* fills Character Expressions, and CHARX exports carry
+  the sprites as V3 emotion assets.
+- **Your own workflow, if you like.** Export it from ComfyUI with *Export (API)*, then choose *Use my own…*. The prompts, size,
+  seed and checkpoint are filled in for you. Workflows with SillyTavern's `%prompt%` placeholders work too.
+- **Safe by default.** Pictures stay SFW unless your project's rating dial says otherwise.
+
+It goes through SillyTavern's own ComfyUI connection, so there's no CORS setup: any ComfyUI your SillyTavern can
+reach works. Prefer SillyTavern's Image Generation extension? Pick it instead. Sprites need ComfyUI.
+
+<div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
+
 ## ✦ The tour
 
 It is a full workbench, not just a generator. Everything the AI makes stays editable by hand, and every
@@ -199,6 +230,16 @@ workshop has its own **AI buttons** for when you only want one piece.
 <td valign="top">
 <img src="docs/assets/shots/compatibility.webp" alt="Compatibility table comparing V3 spec validity with SillyTavern support" />
 <b>Compatibility</b>: "valid in the V3 spec" is not "used by SillyTavern". Every card shows the difference.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<img src="docs/assets/shots/stage.webp" alt="Images tab: the character's transparent joy sprite standing inside the painted workshop scene, above the prompts" />
+<b>The stage</b>: the painted scene becomes the set and the character stands in it. Click a mood to swap the face. Below it, the AI writes the prompts and <i>Paint all</i> fills the gallery.
+</td>
+<td valign="top">
+<img src="docs/assets/shots/sprites.webp" alt="Eight expression sprites on a transparency checkerboard with Paint missing, New face and Install in SillyTavern" />
+<b>Expression sprites</b>: one face, eight (or 28) moods, transparent, one click into SillyTavern's Character Expressions.
 </td>
 </tr>
 <tr>
@@ -296,6 +337,14 @@ what is missing: empty fields, openings, a lorebook, a preset and so on. What yo
 </details>
 
 <details>
+<summary><b>Do I need ComfyUI?</b></summary>
+<br />
+No. Without it the studio still writes the image prompts, and you can paint them anywhere. With SillyTavern's Image
+Generation extension it can paint through that. ComfyUI adds the built-in workflows, the checkpoint-aware prompts and
+the expression sprites. If ComfyUI runs on another machine, start it with <code>--listen</code> so SillyTavern can reach it.
+</details>
+
+<details>
 <summary><b>How many model calls does a full roleplay take?</b></summary>
 <br />
 About a dozen: one per step, plus the occasional retry or repair. With a fast cloud model it takes a few minutes.
@@ -335,7 +384,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-97 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+112 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline. A live suite runs inside a SillyTavern tab against the real server (it creates and then removes
 `CSTEST_*` items):

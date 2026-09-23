@@ -556,6 +556,7 @@ function ImagesTab({ store, env, project, ch }) {
     const [busy, setBusy] = useState('');
     const [spriteSet, setSpriteSet] = useState('core');
     const [progress, setProgress] = useState(null);
+    const [mood, setMood] = useState('neutral');
     const stop = useRef(null);
     const d = ch.card.data;
     let settings = null;
@@ -650,7 +651,16 @@ function ImagesTab({ store, env, project, ch }) {
     });
 
     const labels = spriteSet === 'all' ? Object.keys(EXPRESSIONS) : CORE_EXPRESSIONS;
+    // The stage: the painted scene as the set, the character standing in it with the chosen mood.
+    const scene = gallery.find(m => /background|scene/i.test(m.purpose ?? m.name ?? ''));
+    const spriteOf = label => (sprites[label] ? findArtifact(project, 'media', sprites[label]) : null);
+    const figure = spriteOf(mood) ?? spriteOf('neutral') ?? spriteOf(Object.keys(sprites)[0]);
+    const shownMood = spriteOf(mood) ? mood : figure ? (spriteOf('neutral') ? 'neutral' : Object.keys(sprites)[0]) : '';
     return html`
+        ${(scene || figure) && html`<div class="cs-stage" style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the painted scene' : ''}`}>
+            ${figure && html`<img class="cs-stage-figure" src=${figure.url} alt="" />`}
+            <div class="cs-stage-caption"><span class="cs-stage-name">${d.name}</span>${shownMood && html`<span class="cs-stage-mood">${shownMood}</span>`}</div>
+        </div>`}
         <div class="cs-row cs-small">
             ${ready ? html`<span class="cs-muted"><${Icon} name="image" /> Painting with ${comfy ? html`ComfyUI · <strong>${String(settings.ckpt).replace(/\.(safetensors|ckpt|gguf)$/i, '')}</strong> · ${FAMILIES[family]?.label ?? family}` : 'SillyTavern Image Generation'}</span>`
                 : html`<span class="cs-warn-text"><${Icon} name="triangle-exclamation" /> No image generator yet.</span>`}
@@ -701,9 +711,11 @@ function ImagesTab({ store, env, project, ch }) {
                 <div class="cs-fuse">${Array.from({ length: progress.total }, (_, i) => html`<span key=${i} class=${cx('cs-fuse-seg', i < progress.done ? 'is-done' : i === progress.done ? 'is-running' : '')}></span>`)}</div>
                 <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. The first one also paints the base portrait.</div>
             </div>`}
-            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites">${Object.keys(EXPRESSIONS).filter(l => sprites[l]).map(l => {
+            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${Object.keys(EXPRESSIONS).filter(l => sprites[l]).map(l => {
                 const m = findArtifact(project, 'media', sprites[l]);
-                return m && html`<figure key=${l} class="cs-sprite"><img src=${m.url} alt=${l} loading="lazy" /><figcaption>${l}</figcaption></figure>`;
+                return m && html`<button key=${l} type="button" class=${cx('cs-sprite', shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
+                    <img src=${m.url} alt="" loading="lazy" /><span class="cs-sprite-label">${l}</span>
+                </button>`;
             })}</div>
             <div class="cs-muted cs-small">Sprites also travel inside CHARX exports as emotion assets; SillyTavern turns them back into sprites on import.</div>`}
         </${Section}>`;
