@@ -22,11 +22,35 @@ export async function stPost(url, body, { raw = false } = {}) {
 
 async function makeCache() {
     try {
-        const lib = await import('../../../../../lib.js');
-        const lf = lib.default?.localforage ?? lib.localforage;
+        const lf = globalThis.SillyTavern?.libs?.localforage;
         if (lf?.createInstance) return lf.createInstance({ name: 'CreativeStudio' });
     } catch { /* optional */ }
     return null;
+}
+
+/**
+ * The user's live World Info scan settings (exported `let` bindings of /scripts/world-info.js).
+ * Path: this file is served at /scripts/extensions/third-party/<folder>/src/st/ → five levels up is /scripts/.
+ */
+export async function readStWorldInfoSettings() {
+    try {
+        const wi = await import('../../../../../world-info.js');
+        return {
+            depth: wi.world_info_depth,
+            minActivations: wi.world_info_min_activations,
+            minActivationsDepthMax: wi.world_info_min_activations_depth_max,
+            budget: wi.world_info_budget,
+            budgetCap: wi.world_info_budget_cap,
+            includeNames: wi.world_info_include_names,
+            recursive: wi.world_info_recursive,
+            caseSensitive: wi.world_info_case_sensitive,
+            matchWholeWords: wi.world_info_match_whole_words,
+            useGroupScoring: wi.world_info_use_group_scoring,
+            maxRecursionSteps: wi.world_info_max_recursion_steps,
+        };
+    } catch {
+        return null;
+    }
 }
 
 export async function createEnvironment() {

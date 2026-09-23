@@ -68,7 +68,14 @@ export function findArtifact(project, type, id) {
 
 /** Log an entry in project history (provenance). */
 export function logHistory(project, entry) {
-    const p = { ...project, history: [...project.history, { id: uid('h'), time: now(), actor: 'user', ...entry }] };
+    const last = project.history[project.history.length - 1];
+    const full = { id: uid('h'), time: now(), actor: 'user', ...entry };
+    // Coalesce a burst of manual edits to the same field (typing) into one history entry.
+    if (last && full.action === 'edit' && last.action === 'edit' && full.actor === 'user' && last.actor === 'user'
+        && last.path === full.path && last.target?.id === full.target?.id && Date.parse(full.time) - Date.parse(last.time) < 60_000) {
+        return { ...project, history: [...project.history.slice(0, -1), { ...last, time: full.time }] };
+    }
+    const p = { ...project, history: [...project.history, full] };
     // Keep history bounded; snapshots cover long-term restore.
     if (p.history.length > 2000) p.history = p.history.slice(-2000);
     return p;
