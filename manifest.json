@@ -1,0 +1,14 @@
+{
+    "display_name": "Creative Studio",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Creative Studio contributors",
+    "version": "0.1.0",
+    "homePage": "https://github.com/",
+    "auto_update": false,
+    "minimum_client_version": "1.19.0"
+}
