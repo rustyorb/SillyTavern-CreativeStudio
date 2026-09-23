@@ -302,7 +302,9 @@ export function tidyExamples(text, charName = '') {
     const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nameRe = charName ? new RegExp(`^\\s*${esc(charName)}\\s*:\\s*`, 'i') : null;
     // A speaker label in the middle of a line starts a new line ("...me?{{char}}: Static." → two messages).
-    const unglued = src.replace(/([^\n])[ \t]*(\{\{\s*(?:user|char|system|narrator)\s*\}\}\s*:)/gi, '$1\n$2');
+    const unglued = src
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/([^\n])[ \t]*(\{\{\s*(?:user|char|system|narrator)\s*\}\}\s*:)/gi, '$1\n$2');
     const blocks = unglued.split(/<START>/i).map(b => b.trim()).filter(Boolean);
     const out = blocks.map(block => {
         const lines = [];
