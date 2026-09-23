@@ -6,9 +6,9 @@
     "dependencies": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "Creative Studio contributors",
-    "version": "0.1.0",
-    "homePage": "https://github.com/",
+    "author": "rustyorb",
+    "version": "0.2.0",
+    "homePage": "https://github.com/rustyorb/SillyTavern-CreativeStudio",
     "auto_update": false,
     "minimum_client_version": "1.19.0"
 }
