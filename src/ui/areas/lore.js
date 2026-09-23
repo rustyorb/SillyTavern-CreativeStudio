@@ -435,7 +435,8 @@ function ActivationChain({ result, multi }) {
         return (r.matched ?? []).slice(0, 3).map(k => html`<span class="cs-chain-spark">“${k}”</span>`);
     };
     if (!lit.length && !cold.length) return null;
-    return html`<div class="cs-chain" role="list" aria-label="Activation chain">
+    return html`<div class="cs-stack">
+    ${lit.length > 0 && html`<div class="cs-chain" role="list" aria-label="Activation chain">
         ${passes.map((p, i) => {
             const state = result.log[p - 1]?.state ?? '';
             return html`<div class="cs-chain-lane" role="listitem" key=${p}>
@@ -444,17 +445,19 @@ function ActivationChain({ result, multi }) {
                     <span class="cs-chain-name">${r.entry.comment || `#${r.entry.uid}`}</span>${multi ? html`<span class="cs-muted cs-small"> · ${r.entry.world}</span>` : ''}
                     <div class="cs-chain-sparks">${spark(r)}${state === 'recursion' ? html`<span class="cs-muted"> from pass ${p - 1} text</span>` : ''}</div>
                 </div>`)}
-                ${i < passes.length - 1 && html`<div class="cs-chain-arrow" aria-hidden="true">→</div>`}
             </div>`;
         })}
-        ${cold.length > 0 && html`<div class="cs-chain-lane cs-chain-cold" role="listitem">
-            <div class="cs-chain-lane-head">Did not fire</div>
-            ${cold.slice(0, 12).map(r => html`<div class="cs-chain-node" key=${`${r.entry.world}.${r.entry.uid}`} title=${r.reason}>
+    </div>`}
+    ${cold.length > 0 && html`<div class="cs-chain-cold" aria-label="Entries that did not fire">
+        <div class="cs-chain-lane-head">Did not fire</div>
+        <div class="cs-chain-cold-row">
+            ${cold.slice(0, 24).map(r => html`<div class="cs-chain-node" key=${`${r.entry.world}.${r.entry.uid}`} title=${r.reason}>
                 <span class="cs-chain-name">${r.entry.comment || `#${r.entry.uid}`}</span>
-                <div class="cs-small cs-muted">${r.status === 'miss' && !/^Primary matched/.test(r.reason ?? '') ? 'no key in scan window' : shortReason(r.reason)}</div>
+                <div class="cs-small cs-muted">${r.status === 'miss' && !/^Primary matched/.test(r.reason ?? '') ? 'no key in the scanned messages' : shortReason(r.reason)}</div>
             </div>`)}
-            ${cold.length > 12 && html`<div class="cs-muted cs-small">+${cold.length - 12} more</div>`}
-        </div>`}
+            ${cold.length > 24 && html`<div class="cs-muted cs-small">+${cold.length - 24} more</div>`}
+        </div>
+    </div>`}
     </div>`;
 }
 

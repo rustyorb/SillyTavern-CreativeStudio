@@ -1,5 +1,5 @@
 // AI UI plumbing: task runner hook, route indicator, profile picker.
-import { html, useState, useRef, useCallback, Button, Icon, cx } from './kit.js';
+import { html, useState, useRef, useCallback, Button, Icon, Badge, cx } from './kit.js';
 import { runStructured, describeRoute, listProfiles, AiError } from '../ai/gateway.js';
 import { openAiSetup } from './providers-panel.js';
 import { getTask, taskSchema } from '../ai/tasks.js';
@@ -82,14 +82,16 @@ export function CreationRoute({ store, project, compact }) {
         }
         set(e.currentTarget.value);
     };
-    return html`<div class=${cx('cs-row', 'cs-small')} title="Structured creation tasks can use a different connection profile than your roleplay model.">
+    const tip = `Creation model: ${route.label}${route.ok && !route.schemaEnforced ? '. JSON by instruction (no schema enforcement).' : ''}\nYour roleplay chat keeps its own connection.`;
+    return html`<div class=${cx('cs-row', 'cs-small')} title=${tip}>
         <${Icon} name="wand-magic-sparkles" />
         ${!compact && html`<span class="cs-muted">Creation model:</span>`}
         <select class="text_pole cs-input" style="width:auto;max-width:260px" value=${current} onChange=${pick} aria-label="Creation connection profile">
-            <option value="">Main connection</option>
+            <option value="">Main connection${current ? '' : route.model ? ` (${String(route.model).split('/').pop()})` : ''}</option>
             ${profiles.map(p => html`<option value=${p.id} selected=${p.id === current}>${p.name}</option>`)}
             <option value="__add__">＋ Add a provider…</option>
         </select>
-        <span class=${route.ok ? 'cs-muted' : 'cs-err-text'}>${route.label}${route.ok && !route.schemaEnforced ? ' · JSON by instruction (no schema enforcement)' : ''}</span>
+        ${!route.ok && html`<span class="cs-err-text">${route.label}</span>`}
+        ${route.ok && !route.schemaEnforced && html`<${Badge} title="Text Completion: the studio asks for JSON by instruction and repairs the answer">JSON by instruction</${Badge}>`}
     </div>`;
 }

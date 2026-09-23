@@ -100,6 +100,26 @@ export function isRunning(runId) {
 
 const STATUS_ICON = { pending: 'circle', running: 'spinner', done: 'circle-check', failed: 'circle-xmark', blocked: 'ban', skipped: 'minus', cancelled: 'circle-stop' };
 
+/** Progress as a fuse: one segment per selected step, burning left to right. */
+function Fuse({ run, stuck }) {
+    const steps = STEPS.filter(s => (run.steps[s.id]?.status ?? 'skipped') !== 'skipped');
+    const done = steps.filter(s => run.steps[s.id].status === 'done').length;
+    const current = steps.find(s => run.steps[s.id].status === 'running');
+    const caption = run.status === 'done' ? `${done} of ${steps.length} steps · ${Math.round(steps.reduce((t, s) => t + (run.steps[s.id].durationMs ?? 0), 0) / 1000)} s of writing`
+        : stuck ? `Interrupted after ${done} of ${steps.length} steps`
+            : current ? `Writing: ${current.label.toLowerCase()} (${done + 1} of ${steps.length})` : `${done} of ${steps.length} steps`;
+    return html`<div class="cs-fuse-wrap">
+        <div class="cs-fuse" role="progressbar" aria-valuemin="0" aria-valuemax=${steps.length} aria-valuenow=${done} aria-label="Generation progress">
+            ${steps.map(s => {
+                const st = run.steps[s.id];
+                return html`<span key=${s.id} class=${cx('cs-fuse-seg', `is-${stuck && st.status === 'running' ? 'cancelled' : st.status}`)}
+                    title=${`${s.label}: ${st.status}${st.durationMs ? ` (${Math.round(st.durationMs / 1000)} s)` : ''}${st.warning ? ` · ${st.warning}` : ''}`}></span>`;
+            })}
+        </div>
+        <div class="cs-muted cs-small">${caption}</div>
+    </div>`;
+}
+
 export function Generator({ store, env, project, select }) {
     const [idea, setIdea] = useState('');
     const [dials, setDials] = useState(() => project.lastDials ?? {});
@@ -124,6 +144,10 @@ export function Generator({ store, env, project, select }) {
     };
     const ch = active?.state?.characterId ? project.characters.find(c => c.id === active.state.characterId) : null;
     const stuck = active?.status === 'running' && !running.has(active.id);
+    const [showSteps, setShowSteps] = useState(false);
+    // The step list opens by itself whenever something needs attention.
+    const trouble = active && Object.values(active.steps).some(s => ['failed', 'blocked'].includes(s.status) || s.warning || s.retrying);
+    const stepsOpen = showSteps || trouble || stuck;
     return html`<section class="cs-generator" aria-label="Generate a complete roleplay">
         <div class="cs-gen-head">
             <h3><${Icon} name="wand-magic-sparkles" /> Generate a complete roleplay</h3>
@@ -143,15 +167,19 @@ export function Generator({ store, env, project, select }) {
             onChange=${e => setSteps(e.currentTarget.checked ? [...steps, s.id] : steps.filter(x => x !== s.id))} /><span>${s.label}</span></label>`)}</div>`}
         ${active && html`<div class="cs-gen-run">
             <div class="cs-row-between">
-                <strong>${active.state?.premise?.title ?? (active.idea ? `“${active.idea.slice(0, 60)}”` : 'Surprise')}</strong>
+                <div class=${cx('cs-gen-card', active.status === 'done' && 'is-done')}>
+                    <div class="cs-gen-title">${active.state?.premise?.title ?? (active.idea ? `“${active.idea.slice(0, 60)}”` : 'Surprise')}</div>
+                    ${active.state?.premise?.logline && html`<div class="cs-gen-logline">${active.state.premise.logline}</div>`}
+                </div>
                 <span class="cs-row">
                     <${Badge} kind=${active.status === 'done' ? 'ok' : active.status === 'running' ? 'accent' : 'warn'}>${stuck ? 'interrupted' : active.status}</${Badge}>
                     ${isRunning && html`<${Button} small icon="stop" label="Stop" onClick=${cancel} />`}
                     ${!isRunning && ['partial', 'cancelled'].includes(active.status) || stuck ? html`<${Button} small icon="rotate" label="Resume" onClick=${() => retry()} />` : ''}
+                    <${Button} small icon="list-check" title=${stepsOpen ? 'Hide the steps' : 'Show every step'} ariaPressed=${stepsOpen} onClick=${() => setShowSteps(!showSteps)} />
                 </span>
             </div>
-            ${active.state?.premise?.logline && html`<div class="cs-muted">${active.state.premise.logline}</div>`}
-            <ol class="cs-gen-steps">${STEPS.map(s => {
+            <${Fuse} run=${active} stuck=${stuck} />
+            ${stepsOpen && html`<ol class="cs-gen-steps">${STEPS.map(s => {
                 const st = active.steps[s.id] ?? { status: 'skipped' };
                 return html`<li key=${s.id} class=${cx('cs-gen-step', `is-${st.status}`)}>
                     <span class=${st.status === 'running' ? 'cs-spin' : ''}><${Icon} name=${STATUS_ICON[st.status] ?? 'circle'} /></span>
@@ -162,7 +190,7 @@ export function Generator({ store, env, project, select }) {
                     ${(st.status === 'failed' || st.status === 'blocked') && html`<span class="cs-err-text cs-small" title=${st.error}>${String(st.error ?? '').slice(0, 70)}</span>`}
                     ${st.status === 'failed' && !isRunning && html`<${Button} small icon="rotate" label="Retry" onClick=${() => retry(s.id)} />`}
                 </li>`;
-            })}</ol>
+            })}</ol>`}
             ${!isRunning && ch && html`<div class="cs-row">
                 <${Button} kind="primary" icon="user-pen" label=${`Open ${ch.card.data.name}`} onClick=${() => select('characters', ch.id)} />
                 ${active.state.lorebookId && html`<${Button} icon="book" label="Open lorebook" onClick=${() => select('lorebooks', active.state.lorebookId)} />`}

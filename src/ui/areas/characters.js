@@ -245,7 +245,8 @@ function CharacterEditor(props) {
     const ep = { ...props, setData, setPath, d };
     const byline = [ch.kind === 'scenario' ? 'Scenario' : 'Character', d.character_version && `v${d.character_version}`, d.creator && `by ${d.creator}`, d.nickname && `“${d.nickname}”`].filter(Boolean).join(' · ');
     return html`<div class="cs-area-head cs-entity-head" style=${avatar ? `background-image:url("${avatar.url}")` : ''}>
-            ${avatar && html`<img src=${avatar.url} alt="" width="46" height="46" style="border-radius:6px;object-fit:cover;border:1px solid var(--cs-line)" />`}
+            ${avatar ? html`<img src=${avatar.url} alt="" width="46" height="46" style="border-radius:6px;object-fit:cover;border:1px solid var(--cs-line)" />`
+                : html`<div class="cs-monogram" aria-hidden="true">${monogram(d.name)}</div>`}
             <div class="cs-entity-title"><h3>${d.name || '(unnamed)'}</h3><span class="cs-byline">${byline}</span></div>
             ${ch.origin?.kind === 'st' && html`<${Badge} kind="accent" title="Linked to a SillyTavern character">ST: ${ch.origin.avatar}</${Badge}>`}
             ${pendingCount > 0 && html`<${Badge} kind="accent">${pendingCount} pending</${Badge}>`}
@@ -748,6 +749,12 @@ function PublishTab({ store, env, project, ch, d }) {
 function fmt(v) {
     if (v === undefined) return '(absent)';
     return typeof v === 'string' ? (v.length > 600 ? `${v.slice(0, 600)}…` : v) : JSON.stringify(v, null, 1)?.slice(0, 600);
+}
+
+/** Initials for a character without an image ("Prometheus in the Gloom" → "PG"; skips small words). */
+function monogram(name) {
+    const words = String(name || '?').split(/[\s\-_]+/).filter(w => w && !/^(the|of|in|a|an|and|de|la|le|von|van)$/i.test(w));
+    return (words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0] ?? '?').slice(0, 2)).toUpperCase();
 }
 
 function safeName(s) {

@@ -337,14 +337,17 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 
 /* --- Lore activation chain --- */
 .cs-chain { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; padding: 4px 0 8px; }
-.cs-chain-lane { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 170px; padding-right: 18px; }
+.cs-chain-lane { position: relative; display: flex; flex-direction: column; gap: 6px; flex: 0 0 190px; padding-left: 12px; border-left: 1px solid var(--cs-line); }
+.cs-chain-lane:first-child { padding-left: 0; border-left: none; }
 .cs-chain-lane-head { font-size: 0.78em; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-dim); }
 .cs-chain-node { border: 1px solid var(--cs-accent); border-left-width: 3px; border-radius: var(--cs-radius); padding: 4px 8px; background: color-mix(in srgb, var(--cs-accent) 10%, var(--cs-bg)); }
 .cs-chain-name { font-weight: 600; }
 .cs-chain-sparks { font-size: 0.82em; display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .cs-chain-spark { color: var(--cs-accent); }
-.cs-chain-arrow { position: absolute; right: 0; top: 50%; color: var(--cs-accent); font-size: 1.2em; }
-.cs-chain-cold .cs-chain-node { border-color: var(--cs-line); background: transparent; opacity: 0.7; }
+.cs-chain-cold { display: flex; flex-direction: column; gap: 6px; }
+.cs-chain-cold-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-chain-cold .cs-chain-node { border-color: var(--cs-line); border-left-width: 1px; background: transparent; opacity: 0.55; flex: 0 1 180px; min-width: 0; }
+.cs-chain-node .cs-chain-name { overflow-wrap: anywhere; }
 .cs-chain-cold .cs-chain-name { font-weight: normal; }
 
 /* --- Entity header (character banner) --- */
@@ -366,6 +369,20 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-gen-head h3 { margin: 0; font-size: 1.15em; display: flex; gap: 8px; align-items: center; }
 .cs-studio .cs-gen-idea { font-size: 1.05em; }
 .cs-gen-run { border-top: 1px solid var(--cs-line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.cs-gen-card { min-width: 0; }
+.cs-gen-title { font-weight: 700; font-size: 1.15em; }
+.cs-gen-card.is-done .cs-gen-title { font-family: 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 2em; font-weight: 600; letter-spacing: .02em; line-height: 1.15; color: var(--cs-fg); }
+.cs-gen-logline { color: var(--cs-dim); }
+.cs-gen-card.is-done .cs-gen-logline { font-style: italic; font-size: 1.08em; color: var(--cs-fg); max-width: 75ch; margin-top: 2px; }
+.cs-fuse-wrap { display: flex; flex-direction: column; gap: 3px; }
+.cs-fuse { display: flex; gap: 3px; height: 6px; }
+.cs-fuse-seg { flex: 1; border-radius: 3px; background: var(--cs-faint); }
+.cs-fuse-seg.is-done { background: color-mix(in srgb, var(--cs-accent) 80%, transparent); }
+.cs-fuse-seg.is-running { background: var(--cs-accent); animation: cs-fuse-burn 0.9s ease-in-out infinite alternate; }
+.cs-fuse-seg.is-failed { background: var(--cs-err); }
+.cs-fuse-seg.is-blocked, .cs-fuse-seg.is-cancelled { background: var(--cs-warn); }
+@keyframes cs-fuse-burn { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cs-fuse-seg.is-running { animation: none; } }
 .cs-gen-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 12px; }
 .cs-gen-step { display: flex; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 4px; }
 .cs-gen-step.is-done > span:first-child { color: var(--cs-ok); }
@@ -387,3 +404,4 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-provider-form a { color: var(--cs-accent); }
 .cs-provider-form select[size] { height: auto; }
 .cs-provider-form .cs-field-head > span { font-weight: 600; font-size: 0.9em; color: var(--cs-dim); }
+.cs-monogram { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 6px; display: grid; place-items: center; font-family: 'Cinzel', 'Cormorant Garamond', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 1.25em; font-weight: 600; letter-spacing: .04em; color: var(--cs-accent); border: 1px solid color-mix(in srgb, var(--cs-accent) 55%, var(--cs-line)); background: color-mix(in srgb, var(--cs-accent) 8%, transparent); }
