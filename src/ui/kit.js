@@ -223,6 +223,24 @@ export function Section({ title, children, open: initial = true, right, id }) {
     </section>`;
 }
 
+/** Modal dialog rendered inside the studio (ST popups are used for simple prompts). */
+export function Modal({ title, onClose, children, footer, wide }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        const prev = document.activeElement;
+        ref.current?.querySelector('input, textarea, select, button')?.focus();
+        return () => prev?.focus?.();
+    }, []);
+    return html`<div class="cs-modal-backdrop" onMouseDown=${e => e.target === e.currentTarget && onClose()}
+        onKeyDown=${e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}>
+        <div class="cs-modal" role="dialog" aria-modal="true" aria-label=${title} ref=${ref} style=${wide ? 'width:min(1200px,100%)' : ''}>
+            <div class="cs-modal-head"><h3>${title}</h3><${Button} small icon="xmark" title="Close (Esc)" onClick=${onClose} /></div>
+            <div class="cs-modal-body">${children}</div>
+            ${footer && html`<div class="cs-modal-foot">${footer}</div>`}
+        </div>
+    </div>`;
+}
+
 /** Download helper. */
 export function downloadBlob(data, filename, mime = 'application/octet-stream') {
     const blob = data instanceof Blob ? data : new Blob([data], { type: mime });

@@ -46,6 +46,7 @@ export function createProject(name = 'Untitled project') {
         playtests: [],
         proposals: [],
         history: [],
+        liveBackups: [],
         settings: { creationProfileId: '', roleplayProfileId: '' },
     };
 }
