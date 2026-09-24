@@ -674,8 +674,9 @@ function ImagesTab({ store, env, project, ch }) {
     const shownMood = spriteOf(mood) ? mood : figure ? (spriteOf('neutral') ? 'neutral' : Object.keys(sprites)[0]) : '';
     const backdrop = !scene && figure ? (ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null) ?? gallery[0] ?? null : null;
     return html`
-        ${(scene || figure) && html`<div class=${cx('cs-stage', backdrop && 'has-backdrop')} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the painted scene' : ''}`}>
+        ${(scene || figure) && html`<div class=${cx('cs-stage', backdrop && 'has-backdrop', shownMood && `cs-mood-${MOOD_FAMILY[shownMood] ?? 'plain'}`)} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the painted scene' : ''}`}>
             ${backdrop && html`<div class="cs-stage-backdrop" style=${`background-image:url("${backdrop.url}")`}></div><div class="cs-stage-light"></div>`}
+            ${shownMood && html`<div class="cs-stage-tint" aria-hidden="true"></div><div class="cs-stage-title" key=${shownMood} aria-hidden="true">${shownMood}</div>`}
             ${figure && html`<img class="cs-stage-figure" src=${figure.url} alt="" />`}
             <div class="cs-stage-caption"><span class="cs-stage-name">${d.name}</span>${shownMood && html`<span class="cs-stage-mood">${shownMood}</span>`}</div>
         </div>`}
@@ -736,8 +737,8 @@ function ImagesTab({ store, env, project, ch }) {
             </div>`}
             ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${moodOrder(Object.keys(EXPRESSIONS).filter(l => sprites[l])).map(l => {
                 const m = findArtifact(project, 'media', sprites[l]);
-                return m && html`<button key=${l} type="button" class=${cx('cs-sprite', shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
-                    <img src=${m.url} alt="" loading="lazy" /><span class=${`cs-sprite-label cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`}>${l}</span>
+                return m && html`<button key=${l} type="button" class=${cx('cs-sprite', `cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`, shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
+                    <img src=${m.url} alt="" loading="lazy" /><span class="cs-sprite-label">${l}</span>
                 </button>`;
             })}</div>
             <div class="cs-muted cs-small">Sprites also travel inside CHARX exports as emotion assets; SillyTavern turns them back into sprites on import.</div>`}

@@ -14,7 +14,7 @@ Then it critiques its own work and fixes it. You steer; the AI writes.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-128%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-130%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -187,9 +187,9 @@ Connect a **ComfyUI** (plug icon → **Images** → ComfyUI → your address →
 - **Safe by default.** Pictures stay SFW unless your project's rating dial says otherwise.
 
 <div align="center">
-  <img src="docs/assets/moods.webp" alt="SillyTavern's default character Seraphina: her original anime avatar, twelve expression sprites made from it (joy, amusement, pride, relief, embarrassment, surprise, fear, nervousness, sadness, grief, anger, disgust) in exactly the same art style, and below them a new portrait, a full-body picture and an empty forest scene, all made from the same avatar" width="100%" />
+  <img src="docs/assets/moods.webp" alt="SillyTavern's default character Seraphina: her original anime avatar, animated so that only her face changes through her moods, beside twelve expression sprites made from it (joy, amusement, pride, relief, embarrassment, surprise, fear, nervousness, sadness, grief, anger, disgust) in exactly the same art style, and below them a full-body picture and an empty forest scene, both made from the same avatar" width="100%" />
   <br />
-  <sub><i>Real output: ST's own Seraphina brought in with one click, then all 28 moods and three new pictures made from her avatar by FLUX Kontext (Nunchaku FP4) through the studio, about 40 s each.</i></sub>
+  <sub><i>Real output: ST's own Seraphina brought in with one click, then all 28 moods and new pictures made from her avatar by FLUX Kontext (Nunchaku FP4) through the studio, about 40 s each. On the left her avatar runs through the moods: watch everything but her face stay put.</i></sub>
 </div>
 
 <br />
@@ -433,7 +433,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-128 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+130 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline. A live suite runs inside a SillyTavern tab against the real server (it creates and then removes
 `CSTEST_*` items):
