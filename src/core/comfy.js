@@ -93,12 +93,195 @@ export const CORE_EXPRESSIONS = ['neutral', 'joy', 'sadness', 'anger', 'surprise
  * Prompts for a sprite set: one neutral base portrait plus one per expression. The expression goes first and is
  * weighted, which (tested on SDXL/Pony) is what makes it read clearly while the look stays the same.
  */
-export function spritePrompts({ look, label, family = 'realistic', rating = '' }) {
-    const frame = family === 'realistic' ? 'head and shoulders portrait, plain studio background' : 'portrait, upper body, looking at viewer, simple background';
-    const base = composePrompt({ prompt: `${look}, ${frame}`, family, rating });
+export function spritePrompts({ look, label, family = 'realistic', rating = '', fromReference = false }) {
+    // Started from the character's own picture, the framing is that picture's: no framing words to fight it.
+    const frame = fromReference ? '' : family === 'realistic' ? 'head and shoulders portrait, plain studio background' : 'portrait, upper body, looking at viewer, simple background';
+    const join = (...parts) => parts.map(x => String(x ?? '').trim()).filter(Boolean).join(', ');
+    const base = composePrompt({ prompt: join(look, frame), family, rating });
     const tags = EXPRESSIONS[label] ?? label;
-    const expr = composePrompt({ prompt: `(${tags}:1.35), ${look}, ${frame}`, family, rating });
+    const expr = composePrompt({ prompt: join(`(${tags}:1.35)`, look, frame), family, rating });
     return { basePositive: base.positive, expressionPositive: expr.positive, negative: base.negative };
+}
+
+/** Nodes that read a picture sent inside the workflow (base64), so nothing has to be uploaded; tried in this order. */
+export const REFERENCE_LOADERS = {
+    'easy loadImageBase64': data => ({ base64_data: data, image_output: 'Hide', save_prefix: 'CreativeStudio_ref' }),
+    ETN_LoadImageBase64: data => ({ image: data }),
+};
+
+/** The order to try ways of getting a reference picture into ComfyUI: the one that worked last time first, upload last. */
+export function referenceLoaderOrder(remembered = '') {
+    const all = [...Object.keys(REFERENCE_LOADERS), 'upload'];
+    return remembered && all.includes(remembered) ? [remembered, ...all.filter(x => x !== remembered)] : all;
+}
+
+/** Face detectors for Impact Pack's FaceDetailer (Ultralytics models from the ADetailer set), most common first. */
+export const FACE_MODELS = ['bbox/face_yolov8m.pt', 'bbox/face_yolov8n.pt', 'bbox/face_yolov8s.pt', 'bbox/face_yolov9c.pt'];
+
+/** T5 text encoders FLUX is usually paired with (ComfyUI's text_encoders folder), most common first. */
+export const T5_ENCODERS = ['t5xxl_fp8_e4m3fn_scaled.safetensors', 't5xxl_fp8_e4m3fn.safetensors', 't5xxl_fp16.safetensors', 't5xxl_enconly.safetensors'];
+
+/** Background removal, best first: InSPyReNet keeps long hair that isnet loses (tested on anime art); then isnet. */
+export const CUTOUTS = [{ node: 'inspyrenet' }, { node: 'essentials' }];
+
+const front = (list, first) => (first && list.includes(first) ? [first, ...list.filter(x => x !== first)] : list);
+
+/**
+ * Every way a server might accept a sprite graph, best first. With the character's picture: for each way of getting
+ * the picture in, an image editor's edit (FLUX Kontext, when the server has one), then the face alone repainted
+ * (FaceDetailer, each face model), then the whole picture; each with the best background removal, the next, none.
+ * What worked last time only moves to the front of its kind, so something installed later is still found (ComfyUI
+ * refuses a graph it cannot run at once, before any painting). Without a picture: the cutout choice only.
+ * @returns {{ loader: string|null, method: 'kontext'|'face'|'whole'|'fresh', face?: string, t5?: string, rb: object|null }[]}
+ */
+export function spriteOptions({ reference = false, cutouts = CUTOUTS, kontext = false, remembered = null } = {}) {
+    const rbs = [...cutouts, null];
+    if (!reference) return rbs.map(rb => ({ loader: null, method: 'fresh', rb }));
+    const methods = [
+        ...(kontext ? front(T5_ENCODERS, remembered?.t5).map(t5 => ({ method: 'kontext', t5 })) : []),
+        ...front(FACE_MODELS, remembered?.face).map(face => ({ method: 'face', face })),
+        { method: 'whole' },
+    ];
+    const out = [];
+    for (const rb of rbs) for (const loader of referenceLoaderOrder(remembered?.node)) for (const m of methods) out.push({ loader, rb, ...m });
+    return out;
+}
+
+/**
+ * What each expression asks of an instruction-following image editor ("Make the character look …"). Faces in
+ * character art usually smile, so the darker moods say what replaces the smile (otherwise the editor keeps it).
+ * Tested on FLUX Kontext: subtle moods need the full-size picture; the wording "a frown instead of a smile" works.
+ */
+export const EDIT_EXPRESSIONS = {
+    neutral: 'calm and neutral: no smile, mouth gently closed, relaxed eyebrows',
+    joy: 'happy: a big joyful smile and bright eyes',
+    amusement: 'amused: a playful grin, laughing softly with slightly squinted eyes',
+    love: 'in love: dreamy half-closed eyes, a warm loving smile and rosy blushing cheeks',
+    admiration: 'starry-eyed with admiration: sparkling eyes with star-like highlights, raised eyebrows and lips parted in awe',
+    approval: 'approving: both eyes closed in a contented smile, like a satisfied nod',
+    caring: 'caring: soft, concerned eyes with gently raised eyebrows and a small reassuring smile',
+    gratitude: 'grateful: a heartfelt smile with happy tears glistening in the eyes',
+    optimism: 'hopeful: bright shining eyes looking upward and an eager, open smile',
+    pride: 'proud: a smug, self-satisfied smirk with the chin raised',
+    relief: 'relieved: eyes closed, eyebrows relaxed and a soft smile, as if letting out a long sigh',
+    excitement: 'excited: wide sparkling eyes and a big open-mouthed smile',
+    desire: 'longing: half-lidded yearning eyes, a blush and softly parted lips, no smile',
+    curiosity: 'curious: one eyebrow raised, wide attentive eyes and a small round open mouth, no smile',
+    realization: 'struck by a sudden realization: wide eyes, raised eyebrows and an open mouth, no smile',
+    surprise: 'surprised: wide eyes, raised eyebrows and an open mouth',
+    confusion: 'confused: a puzzled frown instead of a smile, a furrowed brow and the head tilted',
+    nervousness: 'nervous: anxious eyes, worried raised eyebrows, an awkward uneasy smile and a drop of sweat',
+    embarrassment: 'embarrassed: a deep blush across the cheeks, a flustered look and eyes glancing away',
+    fear: 'frightened: wide terrified eyes, raised eyebrows and a trembling open mouth, no smile',
+    sadness: 'sad: a frown instead of a smile, eyebrows raised in the middle, teary downcast eyes',
+    grief: 'grief-stricken: crying, with tears streaming down the cheeks and an anguished, sobbing face, no smile',
+    remorse: 'remorseful: a guilty frown instead of a smile, downcast eyes and a furrowed brow',
+    disappointment: 'disappointed: a downturned mouth instead of a smile and drooping eyes, as if sighing',
+    annoyance: 'annoyed: narrowed eyes, a pout and an irritated frown instead of a smile',
+    anger: 'furious: a scowl instead of a smile, glaring eyes, sharply lowered eyebrows and clenched teeth',
+    disgust: 'disgusted: a wrinkled nose, a grimace instead of a smile and narrowed eyes',
+    disapproval: 'disapproving: a stern frown instead of a smile and narrowed, judging eyes',
+};
+
+/** Expressions that need a command of their own: "Remove the smile" is what moves a smiling face to neutral. */
+const EDIT_COMMANDS = {
+    neutral: 'Remove the smile: the character now has a blank, neutral expression with lips closed in a straight line.',
+};
+
+/** The editing instruction for one expression; the character, outfit, pose, background and art style stay. */
+export function editInstruction(label) {
+    const change = EDIT_COMMANDS[label] ?? `Make the character look ${EDIT_EXPRESSIONS[label] ?? label}.`;
+    return `${change} Keep the same character, hairstyle, outfit, pose, background and art style.`;
+}
+
+/** The instruction that turns the character's own picture into the picture a written prompt asks for. */
+export function pictureInstruction(purpose = '', prompt = '') {
+    const what = String(prompt).trim().replace(/[\s.,;]+$/, '');
+    if (/background|scene|location|landscape/i.test(purpose)) return `Show only the place, with no people in it: ${what}. Keep the art style.`;
+    if (/full|body/i.test(purpose)) return `Show the same character in a full-body picture from head to toe: ${what}. Keep the same face, hairstyle, outfit and art style.`;
+    return `Show the same character in a new portrait: ${what}. Keep the same face, hairstyle, outfit and art style.`;
+}
+
+/** The FLUX VAE among a server's VAEs (ComfyUI's list; "ae.safetensors" is Black Forest Labs' own name for it). */
+export function fluxVae(vaes = []) {
+    const names = (vaes ?? []).map(v => (typeof v === 'string' ? v : v?.value)).filter(Boolean);
+    const base = n => n.split(/[\\/]/).pop();
+    return names.find(n => /^ae\.(safetensors|sft)$/i.test(base(n))) ?? names.find(n => /flux.*vae|vae.*flux/i.test(n)) ?? 'ae.safetensors';
+}
+
+/** A FLUX Kontext model among the diffusion models SillyTavern lists ("UNet: …" / "GGUF: …" entries), if any. */
+export function kontextModel(models = []) {
+    const m = (models ?? []).find(x => /^(UNet|GGUF):/i.test(String(x?.text ?? '')) && /kontext/i.test(String(x?.value ?? '')));
+    return m ? m.value : null;
+}
+
+/** Background removal nodes after an image; returns the image to save. */
+function cutoutNodes(wf, image, removeBackground) {
+    if (removeBackground?.node === 'inspyrenet') {
+        wf.rembgSession = { class_type: 'TransparentBGSession+', inputs: { mode: 'base', use_jit: true } };
+    } else if (removeBackground?.node === 'essentials') {
+        wf.rembgSession = { class_type: 'RemBGSession+', inputs: { model: 'isnet-general-use: general purpose', providers: 'CUDA' } };
+    } else {
+        return image;
+    }
+    wf.rembg = { class_type: 'ImageRemoveBackground+', inputs: { rembg_session: ['rembgSession', 0], image } };
+    wf.alpha = { class_type: 'InvertMask', inputs: { mask: ['rembg', 1] } };
+    wf.cutout = { class_type: 'JoinImageWithAlpha', inputs: { image: ['rembg', 0], alpha: ['alpha', 0] } };
+    return ['cutout', 0];
+}
+
+/** The character's own picture: loaded (sent inline, or an uploaded file) and fitted to the canvas. */
+function referenceNodes(wf, reference, width, height) {
+    wf.ref = reference.loader === 'upload'
+        ? { class_type: 'LoadImage', inputs: { image: reference.data }, _meta: { title: 'Character picture' } }
+        : { class_type: reference.loader, inputs: REFERENCE_LOADERS[reference.loader](reference.data), _meta: { title: 'Character picture' } };
+    wf.refFit = { class_type: 'ImageScale', inputs: { image: ['ref', 0], upscale_method: 'lanczos', width, height, crop: 'center' } };
+    return ['refFit', 0];
+}
+
+/**
+ * An expression made by an instruction-following image editor (FLUX Kontext): the picture itself is edited, so the
+ * art style, face, outfit and background stay; only the expression changes. The loader follows the model file:
+ * Nunchaku's "svdq-" builds, GGUF, or a plain diffusion model. (Tested: Nunchaku FP4 Kontext; subtle moods such
+ * as sadness need the full-size picture and 20 steps, about 35 s a sprite on a laptop RTX 5070 Ti.)
+ */
+export function buildKontextExpression(args) {
+    return buildKontextEdit({ prefix: 'CreativeStudio_expr', ...args });
+}
+
+/**
+ * Any picture made by editing the character's own picture with FLUX Kontext. The new picture has the reference's
+ * size unless another canvas is given (a wide scene from a tall portrait): the editor reads the picture as a
+ * reference and paints the canvas from scratch.
+ */
+export function buildKontextEdit({ model, t5 = T5_ENCODERS[0], vae = 'ae.safetensors', reference, width = 832, height = 1216, canvas = null, instruction, seed, steps = 20, guidance = 2.5, removeBackground = null, prefix = 'CreativeStudio_edit' }) {
+    const wf = {};
+    const file = String(model).split(/[\\/]/).pop();
+    wf.unet = /^svdq-/i.test(file)
+        ? { class_type: 'NunchakuFluxDiTLoader', inputs: { model_path: model, cache_threshold: 0, attention: 'nunchaku-fp16', cpu_offload: 'auto', device_id: 0, data_type: 'bfloat16', i2f_mode: 'enabled' } }
+        : /\.gguf$/i.test(file)
+            ? { class_type: 'UnetLoaderGGUF', inputs: { unet_name: model } }
+            : { class_type: 'UNETLoader', inputs: { unet_name: model, weight_dtype: 'default' } };
+    wf.clip = { class_type: 'DualCLIPLoader', inputs: { clip_name1: 'clip_l.safetensors', clip_name2: t5, type: 'flux' } };
+    wf.vae = { class_type: 'VAELoader', inputs: { vae_name: vae } };
+    const picture = referenceNodes(wf, reference, width, height);
+    wf.encode = { class_type: 'VAEEncode', inputs: { pixels: picture, vae: ['vae', 0] } };
+    wf.expr = { class_type: 'CLIPTextEncode', inputs: { text: instruction, clip: ['clip', 0] }, _meta: { title: 'Edit instruction' } };
+    wf.reference = { class_type: 'ReferenceLatent', inputs: { conditioning: ['expr', 0], latent: ['encode', 0] } };
+    wf.guidance = { class_type: 'FluxGuidance', inputs: { conditioning: ['reference', 0], guidance } };
+    wf.neg = { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['expr', 0] } };
+    if (canvas) wf.canvas = { class_type: 'EmptySD3LatentImage', inputs: { width: canvas[0], height: canvas[1], batch_size: 1 } };
+    wf.express = { class_type: 'KSampler', inputs: { seed, steps, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1, model: ['unet', 0], positive: ['guidance', 0], negative: ['neg', 0], latent_image: canvas ? ['canvas', 0] : ['encode', 0] } };
+    wf.decode = { class_type: 'VAEDecode', inputs: { samples: ['express', 0], vae: ['vae', 0] } };
+    wf.save = { class_type: 'SaveImage', inputs: { filename_prefix: prefix, images: cutoutNodes(wf, ['decode', 0], removeBackground) } };
+    return wf;
+}
+
+/** A canvas of about one megapixel in the reference picture's own proportions (multiples of 64, SDXL-friendly). */
+export function referenceSize(width, height, pixels = 1024 * 1024) {
+    const aspect = Math.min(2, Math.max(0.5, (width || 1) / (height || 1)));
+    const snap = v => Math.max(512, Math.round(v / 64) * 64);
+    return [snap(Math.sqrt(pixels * aspect)), snap(Math.sqrt(pixels / aspect))];
 }
 
 /**
@@ -186,25 +369,43 @@ export function buildTxt2Img({ ckpt, positive, negative, width = 832, height = 1
  * @param {number} [o.strength] how far the expression may move away from the base (0.65 reads clearly and keeps the face)
  * @param {object|null} [o.removeBackground] { node: 'essentials' } to cut the sprite out (transparent PNG)
  */
-export function buildExpression({ ckpt, basePositive, expressionPositive, negative, width = 832, height = 1216, seed, steps = 25, cfg = 5, sampler = 'euler', scheduler = 'normal', clipSkip = 1, strength = 0.65, removeBackground = null, prefix = 'CreativeStudio_expr' }) {
+export function buildExpression({ ckpt, basePositive, expressionPositive, negative, width = 832, height = 1216, seed, steps = 25, cfg = 5, sampler = 'euler', scheduler = 'normal', clipSkip = 1, strength = 0.65, removeBackground = null, reference = null, face = null, prefix = 'CreativeStudio_expr' }) {
     const wf = {};
     const clip = baseNodes(wf, { ckpt, clipSkip });
-    wf.pos = { class_type: 'CLIPTextEncode', inputs: { text: basePositive, clip }, _meta: { title: 'Base portrait' } };
     wf.neg = { class_type: 'CLIPTextEncode', inputs: { text: negative, clip }, _meta: { title: 'Negative' } };
-    wf.latent = { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } };
-    wf.sample = { class_type: 'KSampler', inputs: { seed, steps, cfg, sampler_name: sampler, scheduler, denoise: 1, model: ['ckpt', 0], positive: ['pos', 0], negative: ['neg', 0], latent_image: ['latent', 0] } };
     wf.expr = { class_type: 'CLIPTextEncode', inputs: { text: expressionPositive, clip }, _meta: { title: 'Expression' } };
-    wf.express = { class_type: 'KSampler', inputs: { seed: seed + 1, steps, cfg, sampler_name: sampler, scheduler, denoise: strength, model: ['ckpt', 0], positive: ['expr', 0], negative: ['neg', 0], latent_image: ['sample', 0] } };
-    wf.decode = { class_type: 'VAEDecode', inputs: { samples: ['express', 0], vae: ['ckpt', 2] } };
-    let image = ['decode', 0];
-    if (removeBackground?.node === 'essentials') {
-        wf.rembgSession = { class_type: 'RemBGSession+', inputs: { model: 'isnet-general-use: general purpose', providers: 'CUDA' } };
-        wf.rembg = { class_type: 'ImageRemoveBackground+', inputs: { rembg_session: ['rembgSession', 0], image } };
-        wf.alpha = { class_type: 'InvertMask', inputs: { mask: ['rembg', 1] } };
-        wf.cutout = { class_type: 'JoinImageWithAlpha', inputs: { image: ['rembg', 0], alpha: ['alpha', 0] } };
-        image = ['cutout', 0];
+    let image;
+    if (reference) referenceNodes(wf, reference, width, height);
+    if (reference && face) {
+        // Only the face is repainted (Impact Pack's FaceDetailer): body, outfit, pose and art style stay the picture's.
+        wf.faceModel = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: face } };
+        wf.face = {
+            class_type: 'FaceDetailer', _meta: { title: 'Expression on the face' },
+            inputs: {
+                image: ['refFit', 0], model: ['ckpt', 0], clip, vae: ['ckpt', 2], guide_size: 512, guide_size_for: true, max_size: 1024,
+                seed: seed + 1, steps, cfg, sampler_name: sampler, scheduler, positive: ['expr', 0], negative: ['neg', 0], denoise: strength,
+                feather: 5, noise_mask: true, force_inpaint: true, bbox_threshold: 0.5, bbox_dilation: 10, bbox_crop_factor: 3,
+                sam_detection_hint: 'center-1', sam_dilation: 0, sam_threshold: 0.93, sam_bbox_expansion: 0, sam_mask_hint_threshold: 0.7,
+                sam_mask_hint_use_negative: 'False', drop_size: 10, bbox_detector: ['faceModel', 0], wildcard: '', cycle: 1,
+            },
+        };
+        image = ['face', 0];
+    } else {
+        let base;
+        if (reference) {
+            wf.encode = { class_type: 'VAEEncode', inputs: { pixels: ['refFit', 0], vae: ['ckpt', 2] } };
+            base = ['encode', 0];
+        } else {
+            wf.pos = { class_type: 'CLIPTextEncode', inputs: { text: basePositive, clip }, _meta: { title: 'Base portrait' } };
+            wf.latent = { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } };
+            wf.sample = { class_type: 'KSampler', inputs: { seed, steps, cfg, sampler_name: sampler, scheduler, denoise: 1, model: ['ckpt', 0], positive: ['pos', 0], negative: ['neg', 0], latent_image: ['latent', 0] } };
+            base = ['sample', 0];
+        }
+        wf.express = { class_type: 'KSampler', inputs: { seed: seed + 1, steps, cfg, sampler_name: sampler, scheduler, denoise: strength, model: ['ckpt', 0], positive: ['expr', 0], negative: ['neg', 0], latent_image: base } };
+        wf.decode = { class_type: 'VAEDecode', inputs: { samples: ['express', 0], vae: ['ckpt', 2] } };
+        image = ['decode', 0];
     }
-    wf.save = { class_type: 'SaveImage', inputs: { filename_prefix: prefix, images: image } };
+    wf.save = { class_type: 'SaveImage', inputs: { filename_prefix: prefix, images: cutoutNodes(wf, image, removeBackground) } };
     return wf;
 }
 

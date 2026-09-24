@@ -94,8 +94,15 @@ export function ImageSetup({ env }) {
             </div>`}
             <div class="cs-row">
                 <label class="cs-toggle"><input type="checkbox" checked=${s.hires} onChange=${e => set({ hires: e.currentTarget.checked })} /><span>Sharper portraits (second pass at 1.5×)</span></label>
-                <label class="cs-toggle"><input type="checkbox" checked=${s.transparentSprites} onChange=${e => set({ transparentSprites: e.currentTarget.checked })} /><span>Transparent expression sprites (when ComfyUI has the RemBG nodes)</span></label>
+                <label class="cs-toggle"><input type="checkbox" checked=${s.transparentSprites} onChange=${e => set({ transparentSprites: e.currentTarget.checked })} /><span>Transparent expression sprites (when ComfyUI has background removal)</span></label>
             </div>
+            <label class="cs-field"><span class="cs-field-head"><span>Sprites from a character's own picture</span></span>
+                <select class="text_pole cs-input" value=${s.spriteMethod ?? 'auto'} onChange=${e => set({ spriteMethod: e.currentTarget.value })}>
+                    <option value="auto" selected=${(s.spriteMethod ?? 'auto') === 'auto'}>Best available: FLUX Kontext edit, else repaint the face, else the whole picture</option>
+                    <option value="face" selected=${s.spriteMethod === 'face'}>Repaint the face only (faster; needs Impact Pack's FaceDetailer)</option>
+                    <option value="whole" selected=${s.spriteMethod === 'whole'}>Repaint the whole picture gently (works everywhere)</option>
+                </select>
+                <span class="cs-hint">A Kontext edit keeps the art style exactly; the face and whole-picture repaints use the checkpoint above, so pick one in the picture's style.</span></label>
             <div class="cs-row cs-small">
                 <span class="cs-muted">Workflow:</span>
                 ${s.workflow ? html`<${Badge} kind="accent">${s.workflow.name}</${Badge}><${Button} small label="Use the built-in one" onClick=${() => set({ workflow: null })} />`

@@ -3,8 +3,8 @@ import {
     html, useState, useMemo, useEffect, useRef, Button, Icon, Badge, Tabs, TextInput, TextArea, StringList, TagsInput, Field,
     Section, Empty, Diagnostics, Modal, Toggle, NumberInput, Select, downloadBlob, pickFile, fileBytes, cx,
 } from '../kit.js';
-import { imageSettings, imageReady, familyOf, paint, paintSprites, installSprites } from '../../st/comfy.js';
-import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative } from '../../core/comfy.js';
+import { imageSettings, imageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../../st/comfy.js';
+import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative, pictureInstruction, sizeFor } from '../../core/comfy.js';
 import { openAiSetup } from '../providers-panel.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
 import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
@@ -563,17 +563,22 @@ function ImagesTab({ store, env, project, ch }) {
     const sprites = ch.sprites ?? {};
     const spriteIds = new Set(Object.values(sprites));
     const gallery = project.media.filter(m => ((ch.links?.media ?? []).includes(m.id) || m.id === ch.avatarMediaId) && !spriteIds.has(m.id));
-    const look = ch.appearance || prompts.find(p => /avatar|portrait/i.test(p.purpose))?.prompt || '';
     const stLinked = ch.origin?.kind === 'st' ? ch.origin.avatar : ch.stAvatar;
+    // Sprites start from the character's own picture when there is one (imported characters above all). Sprites
+    // already painted from a fresh portrait keep that source unless the author switches, so a set never mixes.
+    const avatarPic = ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null;
+    const spriteSource = ch.spriteSource ?? (['st', 'import'].includes(ch.origin?.kind) || !Object.keys(sprites).length ? 'avatar' : 'fresh');
+    const fromAvatar = !!avatarPic && spriteSource === 'avatar';
 
     const writePrompts = async () => {
         const r = await ai.run('media.prompts', { card: ch.card, style, promptStyle });
-        if (!r) return;
+        if (!r) return null;
         store.update(p => {
             let n = editArtifactField(p, 'characters', ch.id, 'imagePrompts', r.value.prompts.map(x => ({ ...x, model: r.generation.label })), { actor: 'ai', summary: 'AI image prompts' });
             if (r.value.appearance) n = editArtifactField(n, 'characters', ch.id, 'appearance', r.value.appearance, { actor: 'ai', summary: 'AI appearance' });
             return editArtifactField(n, 'characters', ch.id, 'imagePromptStyle', promptStyle, { actor: 'ai', summary: 'Prompt style' });
         }, 'image prompts');
+        return r.value;
     };
 
     /** Save a painted picture; the first portrait becomes the avatar if there is none yet. */
@@ -592,7 +597,12 @@ function ImagesTab({ store, env, project, ch }) {
 
     const paintOne = async pr => {
         const current = store.get().characters.find(c => c.id === ch.id) ?? ch;
-        const r = await paint({ prompt: characterPrompt({ appearance: current.appearance, prompt: pr.prompt, purpose: pr.purpose }), negative: characterNegative(pr), purpose: pr.purpose, rating });
+        // A character with a picture of their own gets new pictures made from it (FLUX Kontext), in its art style;
+        // without Kontext on the server, pictures are painted from the words as before.
+        const own = fromAvatar ? findArtifact(store.get(), 'media', current.avatarMediaId) : null;
+        const scene = /background|scene|location|landscape/i.test(pr.purpose ?? '');
+        const r = (own && await paintFromPicture({ reference: await mediaBytes(env, own), instruction: pictureInstruction(pr.purpose, pr.prompt), canvas: scene ? sizeFor('background') : null }))
+            ?? await paint({ prompt: characterPrompt({ appearance: current.appearance, prompt: pr.prompt, purpose: pr.purpose }), negative: characterNegative(pr), purpose: pr.purpose, rating });
         await keep(r.bytes, { purpose: pr.purpose, prompt: r.positive, seed: r.seed });
     };
     const run = async (key, fn) => {
@@ -602,15 +612,22 @@ function ImagesTab({ store, env, project, ch }) {
     const paintAll = () => run('all', async () => { for (const pr of prompts) await paintOne(pr); });
 
     const paintSpriteSet = labels => run('sprites', async () => {
-        if (!look) throw new Error('Write the image prompts first: sprites reuse the character\'s appearance.');
+        const now = () => store.get().characters.find(c => c.id === ch.id) ?? ch;
+        const lookOf = c => c.appearance || (c.imagePrompts ?? []).find(pr => /avatar|portrait/i.test(pr.purpose))?.prompt || '';
+        // Sprites need words for the character's look too: the AI writes them from the card when nothing says yet.
+        if (!lookOf(now())) await writePrompts();
+        const lookNow = lookOf(now());
+        const reference = fromAvatar ? findArtifact(store.get(), 'media', now().avatarMediaId) : null;
+        if (!lookNow && !reference) throw new Error('Write the image prompts first: sprites reuse the character\'s appearance.');
         const ac = new AbortController();
         stop.current = ac;
         const seed = ch.spriteSeed ?? randomSeed();
         const failed = [];
+        const failures = [];
         setProgress({ done: 0, total: labels.length, current: labels[0] });
         store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSeed', seed, { actor: 'ai', summary: 'Sprite seed' }), 'sprite seed');
         const res = await paintSprites({
-            look, labels, rating, seed, signal: ac.signal,
+            look: lookNow, labels, rating, seed, signal: ac.signal, reference: reference ? await mediaBytes(env, reference) : null,
             onEach: async (label, r) => {
                 if (r.bytes) {
                     const { media: m, apply } = await saveMedia(env, store.get(), r.bytes, { name: `${d.name} — ${label}`, role: 'sprite' });
@@ -620,15 +637,21 @@ function ImagesTab({ store, env, project, ch }) {
                         const c = findArtifact(n, 'characters', ch.id);
                         return editArtifactField(n, 'characters', ch.id, 'sprites', { ...(c.sprites ?? {}), [label]: m.id }, { actor: 'ai', summary: `Painted ${label} sprite` });
                     }, 'paint sprite');
-                } else failed.push(label);
+                } else {
+                    failed.push(label);
+                    failures.push(r.error);
+                }
                 setProgress(pg => ({ ...pg, done: pg.done + 1, current: labels[labels.indexOf(label) + 1] }));
             },
         });
         setProgress(null);
-        env.toast(`${Object.keys(res.sprites).length} sprite(s) painted${res.transparent ? ' with transparent backgrounds' : ''}${failed.length ? `; failed: ${failed.join(', ')}` : ''}.`, failed.length ? 'error' : 'ok', 7000);
+        const made = Object.keys(res.sprites).length;
+        const how = { kontext: ' from the avatar (FLUX Kontext edit)', face: ' from the avatar (face repainted)', whole: ' from the avatar (whole picture repainted)' }[res.method] ?? '';
+        env.toast(made ? `${made} sprite(s) painted${how}${res.transparent ? ' with transparent backgrounds' : ''}${failed.length ? `; failed: ${failed.join(', ')}` : ''}.`
+            : `No sprites painted. ${failures.at(-1) ?? ''}`.trim(), failed.length ? 'error' : 'ok', 9000);
     });
     const newFace = async () => {
-        if (!(await env.confirm('Paint every sprite again with a new face?', 'The current sprites are replaced (Ctrl+Z brings them back).'))) return;
+        if (!(await env.confirm(fromAvatar ? 'Paint every sprite again from the avatar?' : 'Paint every sprite again with a new face?', 'The current sprites are replaced (Ctrl+Z brings them back).'))) return;
         store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSeed', randomSeed(), { summary: 'New sprite seed' }), 'sprite seed');
         paintSpriteSet(Object.keys(sprites).length ? Object.keys(sprites) : CORE_EXPRESSIONS);
     };
@@ -690,22 +713,27 @@ function ImagesTab({ store, env, project, ch }) {
             </figure>`)}</div>
         </${Section}>`}
         <${Section} title=${`Expression sprites (${Object.keys(sprites).length})`} open=${Object.keys(sprites).length > 0 || comfy}>
-            <div class="cs-muted cs-small">One face, many moods, for SillyTavern's Character Expressions. Every sprite starts from the same portrait, so hair, face and outfit stay the same.${comfy ? '' : ' Needs ComfyUI (AI for creation → Images).'}</div>
+            <div class="cs-muted cs-small">One face, many moods, for SillyTavern's Character Expressions. ${fromAvatar ? 'Every sprite is made from the avatar, so face, outfit and art style stay the character\'s own.' : 'Every sprite starts from the same portrait, so hair, face and outfit stay the same.'}${comfy ? '' : ' Needs ComfyUI (AI for creation → Images).'}</div>
             <div class="cs-row">
                 <select class="text_pole cs-input" style="width:auto" value=${spriteSet} onChange=${e => setSpriteSet(e.currentTarget.value)} aria-label="Which expressions">
                     <option value="core" selected=${spriteSet === 'core'}>8 core expressions</option>
                     <option value="all" selected=${spriteSet === 'all'}>All 28 SillyTavern expressions</option>
                 </select>
+                ${avatarPic && html`<select class="text_pole cs-input" style="width:auto" aria-label="What the sprites start from"
+                    onChange=${e => store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSource', e.currentTarget.value, { summary: 'Sprites start from' }), 'sprite source')}>
+                    <option value="avatar" selected=${fromAvatar}>From the avatar</option>
+                    <option value="fresh" selected=${!fromAvatar}>From a new portrait</option>
+                </select>`}
                 <${Button} kind="ai" icon="face-smile" label=${busy === 'sprites' ? 'Painting…' : Object.keys(sprites).length ? 'Paint missing' : 'Paint sprites'}
                     onClick=${() => paintSpriteSet(labels.filter(l => !sprites[l]).length ? labels.filter(l => !sprites[l]) : labels)} disabled=${!!busy || !comfy} />
                 ${busy === 'sprites' && html`<${Button} small icon="stop" label="Stop" onClick=${() => stop.current?.abort()} />`}
-                ${Object.keys(sprites).length > 0 && !busy && html`<${Button} small icon="rotate" label="New face" onClick=${newFace} disabled=${!comfy} />`}
+                ${Object.keys(sprites).length > 0 && !busy && html`<${Button} small icon="rotate" label=${fromAvatar ? 'Repaint all' : 'New face'} onClick=${newFace} disabled=${!comfy} />`}
                 ${Object.keys(sprites).length > 0 && html`<${Button} small icon="upload" label=${busy === 'install' ? 'Installing…' : 'Install in SillyTavern'} onClick=${install} disabled=${!!busy}
                     title=${stLinked ? `Upload to characters/${d.name}/ (Character Expressions)` : 'Uploads to characters/<name>/ in SillyTavern; create the character there too (Export & SillyTavern tab)'} />`}
             </div>
             ${progress && html`<div class="cs-fuse-wrap">
                 <div class="cs-fuse">${Array.from({ length: progress.total }, (_, i) => html`<span key=${i} class=${cx('cs-fuse-seg', i < progress.done ? 'is-done' : i === progress.done ? 'is-running' : '')}></span>`)}</div>
-                <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. The first one also paints the base portrait.</div>
+                <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. ${fromAvatar ? 'Each one starts from the avatar.' : 'The first one also paints the base portrait.'}</div>
             </div>`}
             ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${moodOrder(Object.keys(EXPRESSIONS).filter(l => sprites[l])).map(l => {
                 const m = findArtifact(project, 'media', sprites[l]);

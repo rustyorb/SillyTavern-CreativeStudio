@@ -14,7 +14,7 @@ Then it critiques its own work and fixes it. You steer; the AI writes.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-118%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-128%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -173,13 +173,26 @@ Connect a **ComfyUI** (plug icon → **Images** → ComfyUI → your address →
   Pony, booru tags for Illustrious, plain sentences for realistic SDXL. Fast DMD2/Lightning checkpoints get fast
   sampling, and a second 1.5× pass sharpens portraits.
 - **Expression sprites that keep one face.** 8 core moods or all 28 of SillyTavern's. Every sprite starts from the
-  same portrait, so hair, face and outfit stay put. Backgrounds are transparent when ComfyUI has the
-  *ComfyUI Essentials* background-removal nodes.
+  same portrait, so hair, face and outfit stay put. Backgrounds are cut out when ComfyUI has *ComfyUI Essentials*
+  (InSPyReNet keeps long hair intact).
+- **Or from the picture your character already has.** Bring a character in and its sprites are made *from its
+  avatar*. With a FLUX Kontext model on your ComfyUI, each mood is an edit of that very picture, so an anime avatar
+  stays anime and nothing but the face changes. Without one, only the face is repainted (Impact Pack's
+  FaceDetailer), or else the whole picture, gently. With Kontext, the portrait, full-body and scene pictures are
+  made from the avatar too, in its art style.
 - **Straight into SillyTavern.** *Install in SillyTavern* fills Character Expressions, and CHARX exports carry
   the sprites as V3 emotion assets.
 - **Your own workflow, if you like.** Export it from ComfyUI with *Export (API)*, then choose *Use my own…*. The prompts, size,
   seed and checkpoint are filled in for you. Workflows with SillyTavern's `%prompt%` placeholders work too.
 - **Safe by default.** Pictures stay SFW unless your project's rating dial says otherwise.
+
+<div align="center">
+  <img src="docs/assets/moods.webp" alt="SillyTavern's default character Seraphina: her original anime avatar, twelve expression sprites made from it (joy, amusement, pride, relief, embarrassment, surprise, fear, nervousness, sadness, grief, anger, disgust) in exactly the same art style, and below them a new portrait, a full-body picture and an empty forest scene, all made from the same avatar" width="100%" />
+  <br />
+  <sub><i>Real output: ST's own Seraphina brought in with one click, then all 28 moods and three new pictures made from her avatar by FLUX Kontext (Nunchaku FP4) through the studio, about 40 s each.</i></sub>
+</div>
+
+<br />
 
 It goes through SillyTavern's own ComfyUI connection, so there's no CORS setup: any ComfyUI your SillyTavern can
 reach works. Prefer SillyTavern's Image Generation extension? Pick it instead. Sprites need ComfyUI.
@@ -371,6 +384,16 @@ the expression sprites. If ComfyUI runs on another machine, start it with <code>
 </details>
 
 <details>
+<summary><b>My character already has a picture. Will the sprites look like it?</b></summary>
+<br />
+Yes: they are made from it. The studio sends the avatar to ComfyUI and, if you have a FLUX Kontext model, edits only
+the expression, so the art style, outfit and pose are the picture's own. The studio finds what your ComfyUI can do by
+itself (Kontext, FaceDetailer, background removal, a node that takes the picture inline) and remembers it. For the
+picture to go in without an upload, ComfyUI needs <i>ComfyUI-Easy-Use</i> or <i>comfyui-tool-nodes</i>; otherwise start
+ComfyUI with <code>--enable-cors-header</code>.
+</details>
+
+<details>
 <summary><b>How many model calls does a full roleplay take?</b></summary>
 <br />
 About a dozen: one per step, plus the occasional retry or repair. With a fast cloud model it takes a few minutes.
@@ -410,7 +433,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-118 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+128 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline. A live suite runs inside a SillyTavern tab against the real server (it creates and then removes
 `CSTEST_*` items):
