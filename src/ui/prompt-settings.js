@@ -10,12 +10,15 @@ export function openPromptSettings() {
     globalThis.dispatchEvent(new CustomEvent('cs-prompt-settings'));
 }
 
+/** Each content level's sigil (the top-bar pill, the level cards, the level instructions). */
+const SIGIL = { sfw: 'shield-halved', mature: 'masks-theater', adult: 'fire' };
+
 /** The project's content level as a small pill for the top bar; opens AI instructions. */
 export function ContentPill({ project }) {
     const level = contentOf(project);
     return html`<button class=${cx('cs-content-pill', `is-${level}`)} onClick=${openPromptSettings}
         title=${`Content: ${CONTENT_LEVELS[level].label}. ${CONTENT_LEVELS[level].hint} Click for AI instructions.`}>
-        <${Icon} name=${level === 'sfw' ? 'shield-halved' : level === 'adult' ? 'fire' : 'masks-theater'} /><span>${CONTENT_LEVELS[level].label}</span>
+        <${Icon} name=${SIGIL[level]} /><span>${CONTENT_LEVELS[level].label}</span>
     </button>`;
 }
 
@@ -44,7 +47,8 @@ export function PromptSettings({ store, env, project, onClose }) {
             <div class="cs-content-levels" role="radiogroup" aria-label="Content level">
                 ${Object.entries(CONTENT_LEVELS).map(([k, c]) => html`<button key=${k} type="button" role="radio" aria-checked=${level === k}
                     class=${cx('cs-content-level', `is-${k}`, level === k && 'active')} onClick=${() => setLevel(k)}>
-                    <strong>${c.label}</strong><span class="cs-muted cs-small">${c.hint}</span>
+                    <span class="cs-content-sigil"><${Icon} name=${SIGIL[k]} /></span>
+                    <span class="cs-content-level-text"><strong>${c.label}</strong><span class="cs-muted cs-small">${c.hint}</span></span>
                 </button>`)}
             </div>
             <div class="cs-muted cs-small">Goes into every writing task and every picture in this project. The generator's rating dial sets it too. For mature and adult projects the studio always adds: “${ADULTS_ONLY}”</div>
@@ -60,16 +64,17 @@ export function PromptSettings({ store, env, project, onClose }) {
             ${shown.filter(i => i.group === g).map(i => {
                 const isOpen = openKey === i.key || !!q;
                 const changed = overrides[i.key] !== undefined;
-                return html`<div key=${i.key} class=${cx('cs-prompt-item', isOpen && 'open', i.key === `content.${level}` && 'current')}>
+                const lv = i.key.startsWith('content.') ? i.key.slice(8) : '';
+                return html`<div key=${i.key} class=${cx('cs-prompt-item', isOpen && 'open', lv && `is-${lv}`, lv === level && 'current')} title=${lv === level ? 'In use for this project' : undefined}>
                     <button type="button" class="cs-prompt-head" aria-expanded=${isOpen} onClick=${() => setOpenKey(openKey === i.key ? null : i.key)}>
                         <${Icon} name=${isOpen ? 'caret-down' : 'caret-right'} />
+                        ${lv && html`<span class="cs-prompt-sigil"><${Icon} name=${SIGIL[lv]} /></span>`}
                         <span class="cs-grow">${i.label}</span>
-                        ${i.key === `content.${level}` && html`<${Badge} kind="ok">in use</${Badge}>`}
                         ${changed && html`<${Badge} kind="accent">edited</${Badge}>`}
                     </button>
                     ${isOpen && html`<div class="cs-prompt-body">
                         ${i.note && html`<div class="cs-muted cs-small">${i.note}</div>`}
-                        <textarea class="text_pole cs-textarea cs-mono" rows=${Math.min(14, Math.max(4, Math.ceil(text(i.key).length / 110)))} value=${text(i.key)}
+                        <textarea class="text_pole cs-textarea cs-prompt-text" rows=${Math.min(14, Math.max(4, Math.ceil(text(i.key).length / 110)))} value=${text(i.key)}
                             onInput=${e => edit(i.key, e.currentTarget.value)} aria-label=${i.label}></textarea>
                         <div class="cs-row cs-small">
                             <span class="cs-muted">${changed ? 'Your version is used.' : 'The studio\'s default.'}</span>

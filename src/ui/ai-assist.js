@@ -1,6 +1,6 @@
 // The AI controls every text field shares: say what you want, then Add to it (every word already there stays),
 // Rewrite, or compare 3 takes. An empty field is written from its context. Character fields and lore entries use it.
-import { html, useState, Button } from './kit.js';
+import { html, useState, useRef, Button } from './kit.js';
 import { useAiTask, AiStatus } from './ai.js';
 import { pushProposals, isHandsFree } from './proposals.js';
 import { joinAddition } from '../ai/tasks.js';
@@ -23,7 +23,8 @@ export const QUICK_DIRECTIONS = [
  * @param {{ id: string, args: (how: string) => object }} o.add                      task that returns { addition, joiner }
  * @param {(text: string) => string} [o.tidy]    clean-up before the text lands
  * @param {string} [o.emptyHint] placeholder when the field is empty
- * @returns {{ actions, panel, status }} header buttons, the direction panel (when open) and the AI status line
+ * @returns {{ ref, actions, panel, status }} a ref for the element around the field (it glows when AI text lands), the
+ *   header buttons, the direction panel (when open) and the AI status line
  */
 export function useAiAssist({ store, project, label, value, target, current, rewrite: rw, add: ad, tidy = t => t, emptyHint }) {
     const [open, setOpen] = useState(false);
@@ -31,15 +32,30 @@ export function useAiAssist({ store, project, label, value, target, current, rew
     const ai = useAiTask(store);
     const empty = !String(value ?? '').trim();
     const name = label.toLowerCase();
+    const ref = useRef(null);
+    const cool = useRef(0);
+    /** New text arrives lit, then cools to the page (restarts if another take lands mid-glow). */
+    const glow = landed => {
+        if (!landed?.length) return;
+        setTimeout(() => {
+            const el = ref.current?.querySelector('textarea');
+            if (!el) return;
+            el.classList.remove('cs-landed');
+            void el.offsetWidth;
+            el.classList.add('cs-landed');
+            clearTimeout(cool.current);
+            cool.current = setTimeout(() => el.classList.remove('cs-landed'), 1800);
+        });
+    };
 
     /** Write or rewrite: one take lands straight away in hands-free mode; several takes are offered side by side. */
     const rewrite = async (count = 1, how = instruction) => {
         const r = await ai.run(rw.id, rw.args(how, count));
         if (!r) return;
         const group = uid('grp');
-        pushProposals(store, r.value.variants.slice(0, count).map(v => ({
+        glow(pushProposals(store, r.value.variants.slice(0, count).map(v => ({
             task: rw.id, title: `${label}: ${v.label || 'take'}`, group, target, after: tidy(v.text), rationale: v.rationale, generation: r.generation,
-        })), count > 1 ? 'AI takes' : `AI ${empty ? 'wrote' : 'rewrote'} ${label}`, { forceReview: count > 1 });
+        })), count > 1 ? 'AI takes' : `AI ${empty ? 'wrote' : 'rewrote'} ${label}`, { forceReview: count > 1 }));
         setOpen(false);
     };
     /** Add to it: the AI writes only new material, joined on after what the field says now (kept word for word). */
@@ -47,10 +63,10 @@ export function useAiAssist({ store, project, label, value, target, current, rew
         const before = current();
         const r = await ai.run(ad.id, ad.args(how));
         if (!r) return;
-        pushProposals(store, [{
+        glow(pushProposals(store, [{
             task: ad.id, title: `${label}: added`, target, rationale: r.value.rationale, generation: r.generation,
             after: tidy(joinAddition(before, r.value.addition, r.value.joiner)),
-        }], `AI added to ${label}`);
+        }], `AI added to ${label}`));
         setOpen(false);
     };
     const primary = () => (empty ? rewrite(1) : add());
@@ -63,8 +79,8 @@ export function useAiAssist({ store, project, label, value, target, current, rew
             onInput=${e => setInstruction(e.currentTarget.value)} onKeyDown=${e => { if (e.key === 'Enter') { e.preventDefault(); primary(); } }} aria-label=${`Direction for the ${name}`} />
         <div class="cs-row">
             ${empty
-                ? html`<${Button} kind="ai" icon="wand-magic-sparkles" label="Write it" title="Write the field (with your direction, if any)" onClick=${() => rewrite(1)} disabled=${ai.busy} />`
-                : html`<${Button} kind="ai" icon="plus" label="Add to it" title="Keeps every word already there and adds new material" onClick=${() => add()} disabled=${ai.busy} />
+                ? html`<${Button} kind="gild" icon="wand-magic-sparkles" label="Write it" title="Write the field (with your direction, if any)" onClick=${() => rewrite(1)} disabled=${ai.busy} />`
+                : html`<${Button} kind="gild" icon="plus" label="Add to it" title="Keeps every word already there and adds new material" onClick=${() => add()} disabled=${ai.busy} />
                     <${Button} icon="rotate" label="Rewrite" title="Replaces the text with a new version (Ctrl+Z brings the old one back)" onClick=${() => rewrite(1)} disabled=${ai.busy} />`}
             <${Button} icon="clone" label="3 takes" title="Three different versions to pick from" onClick=${() => rewrite(3)} disabled=${ai.busy} />
             ${!empty && html`<span class="cs-chips" role="group" aria-label="Quick directions">${QUICK_DIRECTIONS.map(q => html`<button key=${q.label} type="button" class="cs-chip" disabled=${ai.busy}
@@ -73,5 +89,5 @@ export function useAiAssist({ store, project, label, value, target, current, rew
         <div class="cs-muted cs-small">${isHandsFree(project) ? 'Lands straight away; Ctrl+Z undoes it.' : 'Waits in the inspector for your OK (Review mode).'} Enter = ${empty ? 'Write it' : 'Add to it'}.</div>
     </div>`;
 
-    return { actions, panel, status: html`<${AiStatus} ai=${ai} />` };
+    return { ref, actions, panel, status: html`<${AiStatus} ai=${ai} />` };
 }

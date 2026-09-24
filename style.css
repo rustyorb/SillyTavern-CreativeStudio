@@ -489,14 +489,36 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-content-pill.is-mature { color: #d9a45b; border-color: color-mix(in srgb, #d9a45b 55%, transparent); }
 .cs-content-pill.is-adult { color: #e0736b; border-color: color-mix(in srgb, #e0736b 55%, transparent); }
 .cs-content-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.cs-content-level { display: flex; flex-direction: column; gap: 2px; text-align: left; font: inherit; color: var(--cs-fg); cursor: pointer;
+.cs-content-level { display: flex; align-items: center; gap: 10px; text-align: left; font: inherit; color: var(--cs-fg); cursor: pointer;
     padding: 8px 10px; border-radius: var(--cs-radius); border: 1px solid var(--cs-line); background: color-mix(in srgb, var(--cs-panel) 60%, transparent); }
 .cs-content-level:hover { border-color: var(--cs-accent); }
 .cs-content-level.active { border-color: var(--cs-accent); background: color-mix(in srgb, var(--cs-accent) 14%, transparent); box-shadow: 0 0 0 1px var(--cs-accent); }
 .cs-prompt-group { display: flex; flex-direction: column; gap: 4px; }
 .cs-prompt-group-head { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cs-dim); margin-top: 6px; }
 .cs-prompt-item { border: 1px solid var(--cs-line); border-radius: var(--cs-radius); }
-.cs-prompt-item.current { border-color: color-mix(in srgb, var(--cs-accent) 60%, var(--cs-line)); }
+.cs-prompt-item.current { border-color: var(--cs-accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cs-accent) 45%, transparent); }
 .cs-prompt-head { display: flex; align-items: center; gap: 6px; width: 100%; font: inherit; color: var(--cs-fg); background: transparent; border: 0; padding: 6px 8px; cursor: pointer; text-align: left; }
 .cs-prompt-body { display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; }
 @media (max-width: 700px) { .cs-content-levels { grid-template-columns: 1fr; } }
+
+/* Content levels wear their sigils: a shield, the theatre masks, a flame. */
+.cs-content-level-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cs-content-sigil { flex: 0 0 auto; font-size: 1.9em; width: 1.3em; text-align: center; opacity: 0.55; transition: opacity .2s, transform .2s; }
+.cs-content-level:hover .cs-content-sigil, .cs-content-level.active .cs-content-sigil { opacity: 1; }
+.cs-content-level.active .cs-content-sigil { transform: scale(1.08); filter: drop-shadow(0 0 8px currentColor); }
+.cs-content-level.is-sfw .cs-content-sigil, .cs-prompt-item.is-sfw .cs-prompt-sigil { color: #7fc7a0; }
+.cs-content-level.is-mature .cs-content-sigil, .cs-prompt-item.is-mature .cs-prompt-sigil { color: #d9a45b; }
+.cs-content-level.is-adult .cs-content-sigil, .cs-prompt-item.is-adult .cs-prompt-sigil { color: #e0736b; }
+.cs-prompt-item:not(.current) .cs-prompt-sigil { opacity: 0.5; }
+/* Instructions read as notes to a writer, not a config file. */
+.cs-studio .cs-textarea.cs-prompt-text { font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif; font-size: 1.05em; line-height: 1.55;
+    background: color-mix(in srgb, var(--cs-accent) 5%, var(--cs-panel)); }
+/* The AI box's promise, gilded but sized for a field. */
+.cs-ai-box .cs-btn-gild { padding: 4px 12px; box-shadow: 0 0 10px color-mix(in srgb, var(--cs-accent) 35%, transparent); }
+/* AI text lands lit, then cools to the page. */
+@keyframes cs-landed {
+    from { box-shadow: 0 0 0 2px var(--cs-accent), 0 0 22px color-mix(in srgb, var(--cs-accent) 60%, transparent); background-color: color-mix(in srgb, var(--cs-accent) 16%, transparent); }
+    to { box-shadow: 0 0 0 0 transparent, 0 0 0 transparent; }
+}
+.cs-studio .cs-textarea.cs-landed { animation: cs-landed 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .cs-studio .cs-textarea.cs-landed { animation-duration: 0.01s; } }

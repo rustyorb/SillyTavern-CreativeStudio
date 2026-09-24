@@ -308,9 +308,11 @@ function EntryEditor({ store, env, project, lb, entry: e, setEntry, removeEntry,
         ${regexNote.length > 0 && html`<div class="cs-small cs-muted">${regexNote.join(' · ')}</div>`}
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.key`} />
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.keysecondary`} />
-        <${TextArea} label="Content" value=${e.content} onChange=${v => set({ content: v }, 'Content')} rows=${8} counter=${env.countTokens} actions=${assist.actions} hint="Macros are substituted at activation. Leading @@activate / @@dont_activate lines are decorators (others are stripped by ST 1.19)." />
-        ${assist.panel}
-        ${assist.status}
+        <div class="cs-stack" ref=${assist.ref}>
+            <${TextArea} label="Content" value=${e.content} onChange=${v => set({ content: v }, 'Content')} rows=${8} counter=${env.countTokens} actions=${assist.actions} hint="Macros are substituted at activation. Leading @@activate / @@dont_activate lines are decorators (others are stripped by ST 1.19)." />
+            ${assist.panel}
+            ${assist.status}
+        </div>
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.content`} />
         <${Section} title="Placement">
             <div class="cs-grid">

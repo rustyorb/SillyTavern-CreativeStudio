@@ -256,7 +256,7 @@ function AiField({ store, env, project, ch, field, label, rows = 6, hint, d, set
         emptyHint: `What should the ${label.toLowerCase()} say? (optional: the AI works from the rest of the card)`,
     });
     const actions = html`<span class="cs-muted">${fieldStats(d[field]).words}w</span>${assist.actions}`;
-    return html`<div class="cs-stack">
+    return html`<div class="cs-stack" ref=${assist.ref}>
         <${TextArea} label=${label} value=${d[field]} onChange=${v => setData(field, v)} rows=${rows} hint=${hint} counter=${env.countTokens} actions=${actions} />
         ${assist.panel}
         ${assist.status}
