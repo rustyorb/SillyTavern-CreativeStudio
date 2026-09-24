@@ -105,6 +105,19 @@ export function removeArtifact(project, type, id, historyEntry) {
     return p;
 }
 
+/**
+ * Put a new picture in a character's sprite slot. The picture it replaces leaves the project in the same step (undo
+ * brings both back) unless something else still shows it: an avatar, a gallery link or another sprite slot.
+ */
+export function setSprite(project, characterId, label, mediaId, meta = {}) {
+    const c = findArtifact(project, 'characters', characterId);
+    const old = c?.sprites?.[label];
+    let p = editArtifactField(project, 'characters', characterId, 'sprites', { ...(c?.sprites ?? {}), [label]: mediaId }, meta);
+    const used = id => p.characters.some(x => x.avatarMediaId === id || (x.links?.media ?? []).includes(id) || Object.values(x.sprites ?? {}).includes(id));
+    if (old && old !== mediaId && !used(old) && findArtifact(p, 'media', old)) p = removeArtifact(p, 'media', old);
+    return p;
+}
+
 /** New character artifact wrapper. */
 export function newCharacter(name = 'New character', card = null, extras = {}) {
     return {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { jsonDiff, textDiff, getPath, setPath, parsePath, diffStats } from '../src/core/diff.js';
 import {
     createProject, newCharacter, upsertArtifact, editArtifactField, createProposal, addProposals,
-    acceptProposal, rejectProposal, isProposalStale, makeSnapshot, restoreSnapshot, dependencyReport, migrateProject, removeArtifact,
+    acceptProposal, rejectProposal, isProposalStale, makeSnapshot, restoreSnapshot, dependencyReport, migrateProject, removeArtifact, setSprite,
 } from '../src/core/project.js';
 
 test('parsePath/getPath/setPath', () => {
@@ -109,4 +109,20 @@ test('migrateProject fills new keys and rejects foreign files', () => {
     assert.deepEqual(m.media, []);
     assert.equal(m.futureKey, 42);
     assert.throws(() => migrateProject({ foo: 1 }));
+});
+
+test('a repainted sprite replaces the old picture, which leaves the project unless something else still shows it', () => {
+    let p = createProject('x');
+    const c = newCharacter('Sera');
+    for (const id of ['old', 'new', 'avatar', 'new2']) p = upsertArtifact(p, 'media', { id, name: id });
+    c.sprites = { joy: 'old', fear: 'avatar' };
+    c.avatarMediaId = 'avatar';
+    p = upsertArtifact(p, 'characters', c);
+    p = setSprite(p, c.id, 'joy', 'new');
+    assert.equal(p.characters[0].sprites.joy, 'new');
+    assert.ok(!p.media.some(m => m.id === 'old'), 'the replaced sprite is gone');
+    p = setSprite(p, c.id, 'fear', 'new2');
+    assert.ok(p.media.some(m => m.id === 'avatar'), 'a picture still used as the avatar stays');
+    p = setSprite(p, c.id, 'sadness', 'new2');
+    assert.deepEqual(p.characters[0].sprites, { joy: 'new', fear: 'new2', sadness: 'new2' }, 'a new slot replaces nothing');
 });

@@ -12,7 +12,7 @@ import { startGeneration, developCharacter, isRunning, missingSteps } from '../g
 import { openPullPicker } from '../st-pull.js';
 import { newRun } from '../../ai/pipeline.js';
 import {
-    findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal, cardForSt,
+    findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal, cardForSt, setSprite,
 } from '../../core/project.js';
 import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3, tidyExamples } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
@@ -634,8 +634,7 @@ function ImagesTab({ store, env, project, ch }) {
                     m.label = label;
                     store.update(p => {
                         const n = apply(p);
-                        const c = findArtifact(n, 'characters', ch.id);
-                        return editArtifactField(n, 'characters', ch.id, 'sprites', { ...(c.sprites ?? {}), [label]: m.id }, { actor: 'ai', summary: `Painted ${label} sprite` });
+                        return setSprite(n, ch.id, label, m.id, { actor: 'ai', summary: `Painted ${label} sprite` });
                     }, 'paint sprite');
                 } else {
                     failed.push(label);
