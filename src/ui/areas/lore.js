@@ -14,7 +14,8 @@ import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
 import { listStWorlds, getStWorld, saveStWorld } from '../../st/live.js';
 import { recordBackup } from '../inspector.js';
 import { stContext, readStWorldInfoSettings } from '../../st/env.js';
-import { entryTitle, entryKeys } from '../../ai/tasks.js';
+import { entryTitle, entryKeys, loreEntryAsk } from '../../ai/tasks.js';
+import { useAiAssist } from '../ai-assist.js';
 
 export const newLorebookArtifact = name => ({ id: uid('lb'), name, data: { entries: {} }, origin: { kind: 'new' } });
 
@@ -279,6 +280,14 @@ function EntryEditor({ store, env, project, lb, entry: e, setEntry, removeEntry,
             ...(r.value.secondary_keys?.length ? [{ task: 'lore.keys', title: `Secondary keys for "${e.comment || e.uid}"`, target: { type: 'lorebooks', id: lb.id, path: `data.entries.${e.uid}.keysecondary` }, after: r.value.secondary_keys, rationale: r.value.rationale, generation: r.generation }] : []),
         ], 'AI keys');
     };
+    const assist = useAiAssist({
+        store, project, label: 'Content', value: e.content,
+        target: { type: 'lorebooks', id: lb.id, path: `data.entries.${e.uid}.content` },
+        current: () => findArtifact(store.get(), 'lorebooks', lb.id)?.data.entries[e.uid]?.content ?? '',
+        rewrite: { id: 'text.rewrite', args: (instruction, count) => ({ ...loreEntryAsk(store.get(), lb.id, e.uid), instruction, count }) },
+        add: { id: 'text.extend', args: instruction => ({ ...loreEntryAsk(store.get(), lb.id, e.uid), instruction }) },
+        emptyHint: 'What should this entry say? (optional: the AI works from the title, keys and linked characters)',
+    });
     const regexNote = [...(e.key ?? []), ...(e.keysecondary ?? [])].filter(looksLikeRegexKey).map(k => `${k} → ${parseRegexKey(k) ? 'valid regex' : 'INVALID regex (matched as text)'}`);
     return html`<div class="cs-stack">
         <div class="cs-row-between">
@@ -299,7 +308,9 @@ function EntryEditor({ store, env, project, lb, entry: e, setEntry, removeEntry,
         ${regexNote.length > 0 && html`<div class="cs-small cs-muted">${regexNote.join(' · ')}</div>`}
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.key`} />
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.keysecondary`} />
-        <${TextArea} label="Content" value=${e.content} onChange=${v => set({ content: v }, 'Content')} rows=${8} counter=${env.countTokens} hint="Macros are substituted at activation. Leading @@activate / @@dont_activate lines are decorators (others are stripped by ST 1.19)." />
+        <${TextArea} label="Content" value=${e.content} onChange=${v => set({ content: v }, 'Content')} rows=${8} counter=${env.countTokens} actions=${assist.actions} hint="Macros are substituted at activation. Leading @@activate / @@dont_activate lines are decorators (others are stripped by ST 1.19)." />
+        ${assist.panel}
+        ${assist.status}
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.content`} />
         <${Section} title="Placement">
             <div class="cs-grid">

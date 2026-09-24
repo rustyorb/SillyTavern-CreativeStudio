@@ -2,7 +2,9 @@
 import { html, useState, Button, Icon, Badge, Section, Select, cx } from './kit.js';
 import { CreationRoute } from './ai.js';
 import { STEPS, DEFAULT_STEPS, newRun, runPipeline, retryable, discardRun } from '../ai/pipeline.js';
-import { DIALS, getTask, taskSchema } from '../ai/tasks.js';
+import { DIALS, getTask, taskSchema, buildTask } from '../ai/tasks.js';
+import { promptOverrides } from '../st/prompt-store.js';
+import { contentOf, contentFromRating, imageRating } from '../core/content.js';
 import { runStructured } from '../ai/gateway.js';
 import { stContext } from '../st/env.js';
 import { commandRegistry, describeCommand } from '../st/stscript-live.js';
@@ -19,13 +21,13 @@ export function makeRunTask(store, env, onStatus = () => {}) {
         if (taskId === 'image.portrait') {
             // Painting, not writing: the picture is saved as project media and handed to the step.
             const t0 = Date.now();
-            const r = await paint({ prompt: args.prompt, negative: args.negative, purpose: args.purpose, rating: args.rating, signal });
+            const r = await paint({ prompt: args.prompt, negative: args.negative, purpose: args.purpose, rating: imageRating(contentOf(store.get())), signal });
             const { media } = await saveMedia(env, store.get(), r.bytes, { name: args.name ?? 'portrait', role: 'generated' });
             Object.assign(media, { prompt: r.positive, seed: r.seed, purpose: args.purpose });
             return { value: { media }, generation: { task: taskId, label: 'ComfyUI', durationMs: Date.now() - t0 } };
         }
         const task = getTask(taskId);
-        const { system, user } = task.build(args);
+        const { system, user } = buildTask(taskId, args, { overrides: promptOverrides(), content: contentOf(store.get()) });
         const profileId = store.get().settings?.creationProfileId ?? '';
         const r = await runStructured(stContext(), { system, user, schema: taskSchema(task, args), schemaName: task.schemaName, profileId, maxTokens: args?.maxTokens ?? task.maxTokens, signal, onStatus });
         return { value: r.value, generation: { task: taskId, ...r.meta, prompt: `${system}\n---\n${user}` } };
@@ -163,7 +165,9 @@ export function Generator({ store, env, project, select }) {
     const isRunning = active?.status === 'running' && running.has(active.id);
     const go = surprise => {
         const run = newRun({ idea: surprise ? '' : idea.trim(), dials, steps });
-        store.update(p => ({ ...p, lastDials: dials }), 'dials');
+        // The rating dial is the project's content level (writing and pictures), so it sticks for later work too.
+        const content = contentFromRating(dials.rating);
+        store.update(p => ({ ...p, lastDials: dials, settings: content ? { ...p.settings, content } : p.settings }), 'dials');
         startGeneration(store, env, run).then(r => {
             if (r.status === 'done') env.toast(`Done: “${r.state.premise?.title ?? 'your roleplay'}” is ready.`, 'ok', 8000);
             else if (r.status === 'partial') env.toast('Generation finished with some failed steps; retry them below.', 'error', 8000);

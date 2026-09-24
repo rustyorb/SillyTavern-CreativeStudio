@@ -10,6 +10,8 @@ import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
 import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
 import { startGeneration, developCharacter, isRunning, missingSteps } from '../generator.js';
 import { openPullPicker } from '../st-pull.js';
+import { useAiAssist } from '../ai-assist.js';
+import { contentOf, imageRating } from '../../core/content.js';
 import { newRun } from '../../ai/pipeline.js';
 import {
     findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal, cardForSt, setSprite,
@@ -238,40 +240,26 @@ function CharacterEditor(props) {
         </div>`;
 }
 
-/** A card text field with inline AI rewrite and pending proposals for that field. */
+/**
+ * A card text field with the same AI controls whether it is empty or not: say what you want, then Add to it (every
+ * word already there stays), Rewrite, or compare 3 takes. An empty field is written from the rest of the card.
+ */
 function AiField({ store, env, project, ch, field, label, rows = 6, hint, d, setData }) {
-    const [open, setOpen] = useState(false);
-    const [instruction, setInstruction] = useState('');
-    const ai = useAiTask(store);
-    const empty = !String(d[field] ?? '').trim();
-    const handsFree = isHandsFree(project);
-    /** One take is applied straight away (hands-free); several takes are always offered side by side for picking. */
-    const run = async (count = 1) => {
-        const r = await ai.run('character.rewrite-field', { card: store.get().characters.find(c => c.id === ch.id)?.card ?? ch.card, field, instruction, count });
-        if (!r) return;
-        const group = uid('grp');
-        pushProposals(store, r.value.variants.slice(0, count).map(v => ({
-            task: 'character.rewrite-field', title: `${label}: ${v.label || 'take'}`, group,
-            target: { type: 'characters', id: ch.id, path: `card.data.${field}` }, after: field === 'mes_example' ? tidyExamples(v.text, ch.card.data.name) : v.text, rationale: v.rationale, generation: r.generation,
-        })), count > 1 ? 'AI takes' : `AI ${empty ? 'wrote' : 'rewrote'} ${label}`, { forceReview: count > 1 });
-        setOpen(false);
-    };
-    const st = fieldStats(d[field]);
-    const verb = empty ? 'Write it' : 'Rewrite';
-    const actions = html`<span class="cs-muted">${st.words}w</span>
-        ${empty && handsFree && html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Write it" title=${`AI writes the ${label.toLowerCase()} from the rest of the card`} onClick=${() => run(1)} disabled=${ai.busy} />`}
-        <${Button} small kind="ai" icon=${empty && handsFree ? 'sliders' : 'wand-magic-sparkles'} title=${`AI: ${verb.toLowerCase()} ${label} (with direction or several takes)`} onClick=${() => setOpen(!open)} ariaPressed=${open} />`;
+    const cardNow = () => store.get().characters.find(c => c.id === ch.id)?.card ?? ch.card;
+    const assist = useAiAssist({
+        store, project, label, value: d[field],
+        target: { type: 'characters', id: ch.id, path: `card.data.${field}` },
+        current: () => cardNow().data[field],
+        rewrite: { id: 'character.rewrite-field', args: (instruction, count) => ({ card: cardNow(), field, instruction, count }) },
+        add: { id: 'character.extend-field', args: instruction => ({ card: cardNow(), field, instruction }) },
+        tidy: text => (field === 'mes_example' ? tidyExamples(text, ch.card.data.name) : text),
+        emptyHint: `What should the ${label.toLowerCase()} say? (optional: the AI works from the rest of the card)`,
+    });
+    const actions = html`<span class="cs-muted">${fieldStats(d[field]).words}w</span>${assist.actions}`;
     return html`<div class="cs-stack">
         <${TextArea} label=${label} value=${d[field]} onChange=${v => setData(field, v)} rows=${rows} hint=${hint} counter=${env.countTokens} actions=${actions} />
-        ${open && html`<div class="cs-ai-box">
-            <div class="cs-row">
-                <input class="text_pole" style="flex:1" placeholder=${empty ? `Direction for the ${label.toLowerCase()} (optional)` : `How should the ${label.toLowerCase()} change? (blank = make it stronger for roleplay)`} value=${instruction}
-                    onInput=${e => setInstruction(e.currentTarget.value)} onKeyDown=${e => e.key === 'Enter' && run(handsFree ? 1 : 3)} aria-label="Rewrite instruction" />
-                ${handsFree && html`<${Button} small kind="ai" icon="wand-magic-sparkles" label=${verb} title="One take, applied right away (undo with Ctrl+Z)" onClick=${() => run(1)} disabled=${ai.busy} />`}
-                <${Button} small kind=${handsFree ? '' : 'ai'} icon="clone" label="3 takes" title="Three different takes to pick from" onClick=${() => run(3)} disabled=${ai.busy} />
-            </div>
-        </div>`}
-        <${AiStatus} ai=${ai} />
+        ${assist.panel}
+        ${assist.status}
         <${PendingFor} store=${store} project=${project} type="characters" id=${ch.id} path=${`card.data.${field}`} />
     </div>`;
 }
@@ -558,7 +546,7 @@ function ImagesTab({ store, env, project, ch }) {
     const comfy = settings?.backend === 'comfy';
     const family = settings ? familyOf(settings) : 'realistic';
     const promptStyle = FAMILIES[family]?.tags ? 'tags' : 'natural';
-    const rating = project.lastDials?.rating ?? '';
+    const rating = imageRating(contentOf(project));
     const prompts = ch.imagePrompts ?? [];
     const sprites = ch.sprites ?? {};
     const spriteIds = new Set(Object.values(sprites));

@@ -42,6 +42,8 @@ src/core/   pure logic, no DOM, no ST — unit-tested in Node (tests/*.test.js)
   qr, stscript                                 Quick Reply v2 model; STscript scanner, effects, dependencies, lint
   project, diff, bundle, playtest              project/proposal/provenance model; diffs; publish bundle; sandbox turns
 src/ai/     gateway (routes, lenient JSON, schema validate+repair), tasks (prompts+schemas), json, schema
+            tasks.PROMPT_DEFAULTS holds every instruction the model gets; buildTask applies the author's edits
+            (st/prompt-store, extension settings) and the project's content level (core/content)
 src/st/     SillyTavern integration: env (context, REST, dialogs, autosave), storage, live (read/apply/backup),
             render (TC via ST functions), stscript-live (parser, registry, execute, QR install)
 src/ui/     Preact components: app shell, workspace, inspector, proposals, kit, one module per workshop area

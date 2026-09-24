@@ -14,7 +14,7 @@ Then it critiques its own work and fixes it. You steer; the AI writes.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-130%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -126,6 +126,48 @@ and **Discard** removes everything it made.
 Toggle it any time with the **Hands-free / Review** pill in the top bar. Either way, every AI change is logged with
 the model, the prompt and the time it was made.
 
+### Steer it when you feel like it
+
+Every text field (card fields and lorebook entries) has the same **AI** box. Say what you want in plain words, or
+don't, and pick what happens to the text that's already there:
+
+<div align="center">
+  <img src="docs/assets/shots/steer.webp" alt="Seraphina's description with the AI box open: a direction typed in (her fear of deep water, and why), and the buttons Add to it, Rewrite, 3 takes, More detail, Tighter and Punchier" width="100%" />
+</div>
+
+| Button | What happens to what you wrote |
+|---|---|
+| **Add to it** | Stays word for word. The AI writes only the new part, in the field's own format (W++ brackets, dialogue, prose), as a new paragraph, a new line or the end of the last sentence |
+| **Rewrite** | Replaced by a new version that follows your direction. Ctrl+Z brings the old one back |
+| **3 takes** | Three different versions side by side; keep the one you like |
+| **More detail · Tighter · Punchier** | One click, no typing |
+
+An empty field gets **Write it** instead, written from everything else on the card.
+
+### Your instructions, your rating
+
+Everything the studio tells the model is on one page, **AI instructions**: click the content pill in the top bar (or
+the plug, or `Ctrl` `K` → *AI instructions*). Read any instruction, rewrite it, put it back with **Reset**. Your
+versions are kept in SillyTavern's extension settings and used in every project.
+
+<div align="center">
+  <img src="docs/assets/shots/instructions.webp" alt="The AI instructions page: three content levels (Keep it SFW, Mature themes selected, Adult explicit allowed), a search box, and the instruction groups with the Mature themes rule open for editing" width="92%" />
+</div>
+
+Each project has a content level, and it goes into every writing task and every picture:
+
+| | **Keep it SFW** | **Mature themes** (default) | **Adult, explicit allowed** |
+|---|---|---|---|
+| Writing | Romance stays affectionate; no nudity or graphic gore | Romance, desire, violence, dark themes, strong language; sex stays implied | As explicit as the story calls for |
+| Pictures | Safe tags, nudity kept out | Only nudity kept out | Nothing kept out |
+
+Mature and adult tell the model it is fiction by and for adults, with no disclaimers and no toning it down, and the
+critique judges craft, not morality. One line is fixed and always added: *"Anyone in romantic or sexual content is an
+adult."*
+
+> The model still has its own rules. If a cloud model refuses something your project allows, try another one (the
+> plug lets you pick a separate model for writing), or a local model.
+
 <div align="center"><img src="docs/assets/divider.svg" width="520" alt="" /></div>
 
 ## ✦ What one line made
@@ -184,7 +226,7 @@ Connect a **ComfyUI** (plug icon → **Images** → ComfyUI → your address →
   the sprites as V3 emotion assets.
 - **Your own workflow, if you like.** Export it from ComfyUI with *Export (API)*, then choose *Use my own…*. The prompts, size,
   seed and checkpoint are filled in for you. Workflows with SillyTavern's `%prompt%` placeholders work too.
-- **Safe by default.** Pictures stay SFW unless your project's rating dial says otherwise.
+- **Your content level.** Pictures follow the project's content level: SFW keeps them safe, mature keeps only nudity out, adult keeps nothing out.
 
 <div align="center">
   <img src="docs/assets/moods.webp" alt="SillyTavern's default character Seraphina: her original anime avatar, animated so that only her face changes through her moods, beside twelve expression sprites made from it (joy, amusement, pride, relief, embarrassment, surprise, fear, nervousness, sadness, grief, anger, disgust) in exactly the same art style, and below them a full-body picture and an empty forest scene, both made from the same avatar" width="100%" />
@@ -237,7 +279,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 </td>
 <td width="50%" valign="top">
 <img src="docs/assets/shots/character.webp" alt="Character editor with the concept panel and card fields" />
-<b>Characters</b>: V3 card editing with <i>Write it</i> on any empty field, three-take rewrites, <i>Build the rest for me</i> and <i>Critique &amp; fix</i>.
+<b>Characters</b>: V3 card editing with an AI box on every field (<i>Add to it</i>, <i>Rewrite</i>, three takes, <i>Write it</i> when empty), <i>Build the rest for me</i> and <i>Critique &amp; fix</i>.
 </td>
 </tr>
 <tr>
@@ -300,8 +342,8 @@ workshop has its own **AI buttons** for when you only want one piece.
 | Area | What you can do |
 |---|---|
 | **Project** | Generate a complete roleplay; premise and notes; health (every validator in one list); relationships & dependencies; **Publish bundle** (ST-native files + manifest + README + re-importable project); **Apply to SillyTavern** (reviewed plan, snapshot and per-item backups) |
-| **Characters** | *Just build it for me* from a premise; distinct concepts to pick from; *Build the rest for me* (fills only what is empty, never duplicates); *Write it* on empty fields; three-take rewrites; greetings with different openings; *Critique & fix*; full V3 editing (nickname, group-only greetings, multilingual notes, source, dates, assets, extensions); embedded lorebook ⇄ project lorebook; spec validation vs the **ST 1.19 support matrix**; import PNG/CHARX/JSON (V1/V2/V3), export ST-style PNG, spec-V3 PNG, CHARX and JSON; bring in from SillyTavern with its lorebook and sprites (feather in ST's character panel), apply back with a diff and a backup, or create in SillyTavern already linked to its lorebook, with fidelity read-back |
-| **Lore** | *Build the world* (linked to the character automatically); every 1.19 entry control; lint; **activation preview** that explains why each entry fires, what beat it, and what reaches the model; extraction from text or the current chat; contradiction and gap audit; key suggestions |
+| **Characters** | *Just build it for me* from a premise; distinct concepts to pick from; *Build the rest for me* (fills only what is empty, never duplicates); an AI box on every field (*Add to it* keeps what you wrote, *Rewrite*, three takes, *Write it* when empty); greetings with different openings; *Critique & fix*; full V3 editing (nickname, group-only greetings, multilingual notes, source, dates, assets, extensions); embedded lorebook ⇄ project lorebook; spec validation vs the **ST 1.19 support matrix**; import PNG/CHARX/JSON (V1/V2/V3), export ST-style PNG, spec-V3 PNG, CHARX and JSON; bring in from SillyTavern with its lorebook and sprites (feather in ST's character panel), apply back with a diff and a backup, or create in SillyTavern already linked to its lorebook, with fidelity read-back |
+| **Lore** | *Build the world* (linked to the character automatically); the same AI box on entry content (it knows the book's other entries and the characters it serves); every 1.19 entry control; lint; **activation preview** that explains why each entry fires, what beat it, and what reaches the model; extraction from text or the current chat; contradiction and gap audit; key suggestions |
 | **Prompts & Presets** | Generate a preset from goals or from the project; Chat Completion Prompt Manager editor (order, enable, roles, relative/in-chat depth, triggers, forbid overrides, divider markers used by large community presets); samplers and formatting; assembled-prompt preview with token counts from ST's tokenizer; **live dry run**; AI critique; versions and compare; Text Completion instruct/context/system-prompt/reasoning templates rendered by **SillyTavern's own functions**; connection profiles shown as *selections*, separate from preset contents |
 | **Regex Lab** | One-click recipes; global, preset-scoped and character-scoped scripts in engine order; **stage preview** (saved text, display, prompt, edit, World Info, reasoning) with fixtures, in a worker with a timeout; lint; order-sensitivity detection; hands-free mode adds only scripts that pass their own tests |
 | **Quick Replies & STscript** | Story-tool recipes; every v2 option; source editor + readable outline; syntax check with **SillyTavern's real parser**; argument checks from the live command registry; effects and dependency panel; command reference; reviewed test run; live install through Quick Reply's own importer |
@@ -358,6 +400,15 @@ through Ollama (slow on CPU, but complete).
 <br />
 That's the point. Leave the idea box empty and press <b>Surprise me</b>. The optional dials (genre, tone, rating,
 point of view, card type) nudge it without asking you to write anything.
+</details>
+
+<details>
+<summary><b>It keeps toning my story down. Can I change what it tells the AI?</b></summary>
+<br />
+Yes. Set the project's content level with the pill in the top bar (<i>Mature themes</i> is the default, <i>Adult</i>
+allows explicit content), and open <b>AI instructions</b> to read or rewrite anything the studio tells the model. Your
+versions apply to every project; <b>Reset</b> brings the studio's own back. A cloud model can still refuse on its own
+account; if one does, pick another for writing with the plug.
 </details>
 
 <details>
@@ -433,8 +484,8 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-130 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
-STscript and Quick Reply analysis, bundles, playtests, the AI gateway (routes, lenient JSON, repair, timeouts) and the
+137 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline. A live suite runs inside a SillyTavern tab against the real server (it creates and then removes
 `CSTEST_*` items):
 

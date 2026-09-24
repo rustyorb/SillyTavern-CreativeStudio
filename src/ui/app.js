@@ -8,6 +8,7 @@ import { Palette } from './palette.js';
 import { isHandsFree } from './proposals.js';
 import { AiSetup } from './providers-panel.js';
 import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt } from './st-pull.js';
+import { PromptSettings, ContentPill } from './prompt-settings.js';
 
 /** A new project starts with the creation model chosen last time (if that profile still exists). */
 function withDefaultCreationModel(project) {
@@ -81,6 +82,7 @@ function Studio({ store, env, initialRoute, onClose }) {
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [aiSetupOpen, setAiSetupOpen] = useState(false);
     const [pullOpen, setPullOpen] = useState(false);
+    const [promptsOpen, setPromptsOpen] = useState(false);
 
     useEffect(() => env.onSaveState(setSaveState), [env]);
     useEffect(() => {
@@ -98,6 +100,11 @@ function Studio({ store, env, initialRoute, onClose }) {
         const open = () => setPullOpen(true);
         globalThis.addEventListener('cs-pull-open', open);
         return () => globalThis.removeEventListener('cs-pull-open', open);
+    }, []);
+    useEffect(() => {
+        const open = () => setPromptsOpen(true);
+        globalThis.addEventListener('cs-prompt-settings', open);
+        return () => globalThis.removeEventListener('cs-prompt-settings', open);
     }, []);
     useEffect(() => {
         const take = async () => {
@@ -189,6 +196,7 @@ function Studio({ store, env, initialRoute, onClose }) {
                     aria-pressed=${handsFree}>
                     <${Icon} name=${handsFree ? 'bolt' : 'list-check'} /><span>${handsFree ? 'Hands-free' : 'Review'}</span>
                 </button>
+                <${ContentPill} project=${project} />
                 <${Button} small icon="plug" title="AI for creation: choose the model or add a provider" onClick=${() => setAiSetupOpen(true)} />
                 <${Button} small icon="magnifying-glass" title="Command palette (Ctrl+K)" onClick=${() => setPaletteOpen(true)} />
                 <${Button} small icon="rotate-left" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
@@ -211,8 +219,10 @@ function Studio({ store, env, initialRoute, onClose }) {
             else if (i.id === 'proposals') openInspectorAt('proposals');
             else if (i.id === 'inspector') setInspectorOpen(!inspectorOpen);
             else if (i.id === 'pull') setPullOpen(true);
+            else if (i.id === 'prompts') setPromptsOpen(true);
         }} />`}
         ${pullOpen && html`<${StCharacterPicker} store=${store} env=${env} project=${project} onClose=${() => setPullOpen(false)} onDone=${showPulled} />`}
+        ${promptsOpen && html`<${PromptSettings} store=${store} env=${env} project=${project} onClose=${() => setPromptsOpen(false)} />`}
         ${aiSetupOpen && html`<${AiSetup} store=${store} env=${env} project=${project} onClose=${() => setAiSetupOpen(false)} />`}
         ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
     </div>`;

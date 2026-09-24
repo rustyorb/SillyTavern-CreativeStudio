@@ -307,7 +307,12 @@ export function cleanNegative(neg = '') {
 
 /** Is the project's content rating one that allows explicit images? Everything else keeps them out. */
 export function explicitAllowed(rating = '') {
-    return /unrestricted|explicit|nsfw/i.test(String(rating));
+    return /unrestricted|explicit|nsfw|adult/i.test(String(rating));
+}
+
+/** Mature: suggestive pictures are fine, explicit nudity is kept out (between SFW and explicit). */
+export function matureRating(rating = '') {
+    return /mature/i.test(String(rating)) && !explicitAllowed(rating);
 }
 
 /**
@@ -316,9 +321,11 @@ export function explicitAllowed(rating = '') {
  */
 export function composePrompt({ prompt, negative = '', family = 'realistic', rating = '' }) {
     const f = FAMILIES[family] ?? FAMILIES.realistic;
-    const sfw = !explicitAllowed(rating);
+    const sfw = !explicitAllowed(rating) && !matureRating(rating);
+    const mature = matureRating(rating);
     const ratingPos = family === 'pony' ? (sfw ? 'rating_safe, ' : '') : '';
-    const ratingNeg = sfw ? (family === 'pony' ? 'rating_explicit, rating_questionable, nsfw, nude, ' : 'nsfw, nude, nipples, ') : '';
+    const ratingNeg = sfw ? (family === 'pony' ? 'rating_explicit, rating_questionable, nsfw, nude, ' : 'nsfw, nude, nipples, ')
+        : mature ? (family === 'pony' ? 'rating_explicit, nude, nipples, ' : 'nude, nipples, explicit, ') : '';
     const positive = `${f.prefix}${ratingPos}${String(prompt ?? '').trim()}`.replace(/\s*,\s*,/g, ',').trim();
     const neg = [ratingNeg + f.negative, cleanNegative(negative)].filter(Boolean).join(', ');
     return { positive, negative: neg };

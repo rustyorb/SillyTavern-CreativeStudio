@@ -3,6 +3,7 @@
 import { html, useState, useEffect, useRef, Button, Icon, Badge, Section, Modal, cx } from './kit.js';
 import { stContext } from '../st/env.js';
 import { ImageSetup } from './image-setup.js';
+import { openPromptSettings } from './prompt-settings.js';
 import { scheduleSettingsBackup } from '../st/studio-settings.js';
 import { describeRoute, listProfiles, runStructured } from '../ai/gateway.js';
 import {
@@ -84,6 +85,9 @@ export function AiSetup({ store, env, project, onClose }) {
         </div>
         ${tests[current] && html`<${TestResult} t=${tests[current]} />`}
         <div class="cs-muted cs-small">Your roleplay chat keeps using SillyTavern's main connection. Creation can use a different model (a strong, fast one is ideal) through a Connection Manager profile.</div>
+        <div class="cs-row">
+            <${Button} small icon="scroll" label="AI instructions & content level…" title="Read and edit every instruction the studio gives the model; choose what this project allows" onClick=${() => { onClose(); openPromptSettings(); }} />
+        </div>
 
         ${!cmOk && html`<div class="cs-warn-text"><${Icon} name="triangle-exclamation" /> Enable SillyTavern's built-in <strong>Connection Manager</strong> extension (Extensions → Manage extensions) to add providers here. The main connection works without it.</div>`}
 

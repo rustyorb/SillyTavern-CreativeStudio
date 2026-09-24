@@ -2,7 +2,9 @@
 import { html, useState, useRef, useCallback, Button, Icon, Badge, cx } from './kit.js';
 import { runStructured, describeRoute, listProfiles, AiError } from '../ai/gateway.js';
 import { openAiSetup } from './providers-panel.js';
-import { getTask, taskSchema } from '../ai/tasks.js';
+import { getTask, taskSchema, buildTask } from '../ai/tasks.js';
+import { promptOverrides } from '../st/prompt-store.js';
+import { contentOf } from '../core/content.js';
 import { stContext } from '../st/env.js';
 
 /**
@@ -24,7 +26,8 @@ export function useAiTask(store) {
         setError(null);
         setStatus('Preparing…');
         try {
-            const { system, user } = task.build(args);
+            // The author's instructions (AI instructions) and the project's content level go into every task.
+            const { system, user } = buildTask(taskId, args, { overrides: promptOverrides(), content: contentOf(store.get()) });
             const profileId = store.get().settings?.creationProfileId ?? '';
             const result = await runStructured(stContext(), {
                 system, user, schema: taskSchema(task, args), schemaName: task.schemaName, profileId,
