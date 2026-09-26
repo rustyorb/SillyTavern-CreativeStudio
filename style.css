@@ -524,8 +524,7 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .cs-studio .cs-textarea.cs-landed { animation-duration: 0.01s; } }
 
 /* --- Bringing cards in: the tree's + menu, menu actions, drop overlay, empty-character hint --- */
-.cs-addmenu { position: relative; }
-.cs-addmenu-menu { min-width: 260px; }
+.cs-addmenu-menu { position: fixed; z-index: 70; min-width: 260px; }
 .cs-menu-action > span { display: inline-flex; align-items: center; gap: 8px; }
 .cs-menu-action i { width: 1.1em; text-align: center; }
 .cs-drop-overlay {

@@ -125,25 +125,39 @@ function treeRows(t, project, q) {
     return rows.filter(match);
 }
 
-/** A tree group's + as a small menu (click outside or Escape closes it without closing the studio). */
+/** A tree group's + as a small menu (click outside, Escape or scrolling closes it without closing the studio). */
 function AddMenu({ label, items }) {
-    const [open, setOpen] = useState(false);
+    const [at, setAt] = useState(null); // where the open menu sits in the studio; null = closed
     const ref = useRef(null);
+    const open = at !== null;
+    const toggle = () => {
+        if (open) return setAt(null);
+        // The tree scrolls, so a menu inside it would be clipped at its edge. The menu is placed in the studio instead:
+        // fixed-position, and the studio's backdrop-filter makes the studio its containing block.
+        const b = ref.current.getBoundingClientRect();
+        const s = ref.current.closest('.cs-studio').getBoundingClientRect();
+        return setAt({ top: b.bottom - s.top + 4, left: b.left - s.left });
+    };
     useEffect(() => {
         if (!open) return undefined;
-        const outside = e => { if (!ref.current?.contains(e.target)) setOpen(false); };
-        const escape = e => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
+        const close = () => setAt(null);
+        const outside = e => { if (!ref.current?.contains(e.target)) close(); };
+        const escape = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
         document.addEventListener('mousedown', outside, true);
         document.addEventListener('keydown', escape, true);
+        document.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
         return () => {
             document.removeEventListener('mousedown', outside, true);
             document.removeEventListener('keydown', escape, true);
+            document.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
         };
     }, [open]);
     return html`<div class="cs-addmenu" ref=${ref}>
-        <${Button} small icon="plus" title=${label} ariaPressed=${open} onClick=${() => setOpen(!open)} />
-        ${open && html`<div class="cs-projsw-menu cs-addmenu-menu" role="menu" aria-label=${label}>
-            ${items.map(i => html`<button role="menuitem" class="cs-projsw-item cs-menu-action" key=${i.label} onClick=${() => { setOpen(false); i.run(); }}>
+        <${Button} small icon="plus" title=${label} ariaPressed=${open} onClick=${toggle} />
+        ${open && html`<div class="cs-projsw-menu cs-addmenu-menu" role="menu" aria-label=${label} style=${`top:${at.top}px;left:${at.left}px`}>
+            ${items.map(i => html`<button role="menuitem" class="cs-projsw-item cs-menu-action" key=${i.label} onClick=${() => { setAt(null); i.run(); }}>
                 <span><${Icon} name=${i.icon} /> ${i.label}</span>${i.hint && html`<small>${i.hint}</small>`}
             </button>`)}
         </div>`}
