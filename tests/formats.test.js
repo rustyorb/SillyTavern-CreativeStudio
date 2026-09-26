@@ -170,3 +170,25 @@ test('tidyExamples leaves prose that starts with a macro alone ("{{char}}\'s voi
     const raw = "<START>\n{{char}}: Hm.\n{{char}}'s voice is cold.\n{{user}}s bag falls.";
     assert.equal(tidyExamples(raw), raw);
 });
+
+test('detectImportKind tells character cards from studio projects and plain pictures', async () => {
+    const { detectImportKind } = await import('../src/core/bundle.js');
+    const { exportCard } = await import('../src/core/cardio.js');
+    const { createProject } = await import('../src/core/project.js');
+    const { zipSync } = await import('../vendor/fflate.mjs');
+    const enc = o => new TextEncoder().encode(typeof o === 'string' ? o : JSON.stringify(o));
+    assert.equal(detectImportKind(fixture('seraphina.png'), 'seraphina.png'), 'card');
+    assert.equal(detectImportKind(blankPng(), 'plain.png'), 'image', 'a PNG without card data is just a picture');
+    assert.equal(detectImportKind(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46]), 'photo.jpg'), 'image');
+    assert.equal(detectImportKind(enc({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: 'A' } }), 'a.json'), 'card');
+    assert.equal(detectImportKind(enc({ spec: 'chara_card_v3', spec_version: '3.0', data: { name: 'A' } }), 'a.json'), 'card');
+    assert.equal(detectImportKind(enc({ name: 'B', description: 'd', first_mes: 'hi' }), 'b.json'), 'card', 'V1 card');
+    assert.equal(detectImportKind(exportCard('charx', { card: emptyCardV3('C') }).bytes, 'c.charx'), 'card');
+    const project = enc(createProject('P'));
+    assert.equal(detectImportKind(project, 'p.studio.json'), 'project');
+    assert.equal(detectImportKind(zipSync({ 'project.studio.json': project }), 'bundle.zip'), 'project');
+    assert.equal(detectImportKind(enc({ entries: {} }), 'world.json'), 'unknown');
+    assert.equal(detectImportKind(enc('not json at all'), 'notes.txt'), 'unknown');
+    assert.equal(detectImportKind(zipSync({ 'readme.txt': enc('x') }), 'other.zip'), 'unknown');
+    assert.equal(detectImportKind(enc('name: C'), 'c.yaml'), 'card', 'YAML goes to the card importer, which explains how to bring it in');
+});

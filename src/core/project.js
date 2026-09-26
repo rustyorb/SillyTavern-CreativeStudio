@@ -113,9 +113,79 @@ export function setSprite(project, characterId, label, mediaId, meta = {}) {
     const c = findArtifact(project, 'characters', characterId);
     const old = c?.sprites?.[label];
     let p = editArtifactField(project, 'characters', characterId, 'sprites', { ...(c?.sprites ?? {}), [label]: mediaId }, meta);
-    const used = id => p.characters.some(x => x.avatarMediaId === id || (x.links?.media ?? []).includes(id) || Object.values(x.sprites ?? {}).includes(id));
+    const used = id => p.characters.some(x => mediaIdsUsedBy(x).includes(id));
     if (old && old !== mediaId && !used(old) && findArtifact(p, 'media', old)) p = removeArtifact(p, 'media', old);
     return p;
+}
+
+/** The pictures a character shows: its avatar, gallery, sprite slots and CHARX asset files. */
+function mediaIdsUsedBy(c) {
+    return [c.avatarMediaId, ...(c.links?.media ?? []), ...Object.values(c.sprites ?? {}), ...Object.values(c.assetFiles ?? {})].filter(Boolean);
+}
+
+/**
+ * Every place a picture is used. An avatar usually sits in the gallery too; it is listed once, as the avatar.
+ * @returns {{ characterId: string, name: string, how: 'avatar'|'gallery'|'sprite'|'asset', label?: string, path?: string }[]}
+ */
+export function mediaUsage(project, mediaId) {
+    const out = [];
+    for (const c of project.characters) {
+        const who = { characterId: c.id, name: c.card?.data?.name ?? '' };
+        if (c.avatarMediaId === mediaId) out.push({ ...who, how: 'avatar' });
+        else if ((c.links?.media ?? []).includes(mediaId)) out.push({ ...who, how: 'gallery' });
+        for (const [label, id] of Object.entries(c.sprites ?? {})) if (id === mediaId) out.push({ ...who, how: 'sprite', label });
+        for (const [path, id] of Object.entries(c.assetFiles ?? {})) if (id === mediaId) out.push({ ...who, how: 'asset', path });
+    }
+    return out;
+}
+
+/** Pictures no character uses (left behind by an earlier removal, a failed import or an undo). */
+export function unusedMedia(project) {
+    const used = new Set(project.characters.flatMap(mediaIdsUsedBy));
+    return project.media.filter(m => !used.has(m.id));
+}
+
+/** A character with every reference to one picture cleared (avatar, sprite slots, asset files; links are removeArtifact's). */
+function withoutMedia(c, mediaId) {
+    let next = c;
+    if (c.avatarMediaId === mediaId) next = { ...next, avatarMediaId: '' };
+    for (const key of ['sprites', 'assetFiles']) {
+        const map = c[key];
+        if (map && Object.values(map).includes(mediaId)) next = { ...next, [key]: Object.fromEntries(Object.entries(map).filter(([, id]) => id !== mediaId)) };
+    }
+    return next;
+}
+
+/** Remove a picture and every place that shows it, as one history entry. */
+export function removeMedia(project, mediaId, historyEntry = {}) {
+    const m = findArtifact(project, 'media', mediaId);
+    let p = removeArtifact(project, 'media', mediaId);
+    p = { ...p, characters: p.characters.map(c => withoutMedia(c, mediaId)) };
+    return logHistory(p, { target: { type: 'media', id: mediaId }, action: 'remove', summary: `Removed picture ${m?.name ?? mediaId}`, ...historyEntry });
+}
+
+/** Remove a character and the pictures only it used, as one history entry (undo brings both back). */
+export function removeCharacter(project, characterId, historyEntry = {}) {
+    const c = findArtifact(project, 'characters', characterId);
+    if (!c) return project;
+    let p = removeArtifact(project, 'characters', characterId);
+    const stillUsed = new Set(p.characters.flatMap(mediaIdsUsedBy));
+    const own = new Set(mediaIdsUsedBy(c).filter(id => !stillUsed.has(id)));
+    if (own.size) p = { ...p, media: p.media.filter(m => !own.has(m.id)) };
+    const name = c.card?.data?.name || '(unnamed)';
+    const summary = own.size ? `Removed ${name} and ${own.size} picture${own.size === 1 ? '' : 's'} only it used` : `Removed ${name}`;
+    return logHistory(p, { target: { type: 'characters', id: characterId }, action: 'remove', summary, ...historyEntry });
+}
+
+const BLANK_NAMES = new Set(['New character', 'New scenario']);
+
+/** Made with New character / New scenario and never edited: an import can take its place. */
+export function isUntouchedBlank(c) {
+    if (!c || c.origin?.kind !== 'new' || c.avatarMediaId || c.concept) return false;
+    if ([c.sprites, c.assetFiles].some(map => Object.keys(map ?? {}).length)) return false;
+    if (Object.values(c.links ?? {}).some(ids => ids?.length)) return false;
+    const name = c.card?.data?.name;
+    return BLANK_NAMES.has(name) && stableStringify(c.card) === stableStringify(emptyCardV3(name));
 }
 
 /** New character artifact wrapper. */

@@ -5,6 +5,7 @@ import { jsonDiff, textDiff, getPath, setPath, parsePath, diffStats } from '../s
 import {
     createProject, newCharacter, upsertArtifact, editArtifactField, createProposal, addProposals,
     acceptProposal, rejectProposal, isProposalStale, makeSnapshot, restoreSnapshot, dependencyReport, migrateProject, removeArtifact, setSprite,
+    mediaUsage, unusedMedia, removeMedia, removeCharacter, isUntouchedBlank,
 } from '../src/core/project.js';
 
 test('parsePath/getPath/setPath', () => {
@@ -125,4 +126,71 @@ test('a repainted sprite replaces the old picture, which leaves the project unle
     assert.ok(p.media.some(m => m.id === 'avatar'), 'a picture still used as the avatar stays');
     p = setSprite(p, c.id, 'sadness', 'new2');
     assert.deepEqual(p.characters[0].sprites, { joy: 'new', fear: 'new2', sadness: 'new2' }, 'a new slot replaces nothing');
+});
+
+/** Sera uses a picture each way a character can (avatar, gallery, sprite, CHARX asset); Ash shares her gallery picture. */
+function picturesProject() {
+    let p = createProject('pictures');
+    for (const id of ['avatar', 'shared', 'joy', 'asset', 'orphan1', 'orphan2']) p = upsertArtifact(p, 'media', { id, name: id });
+    const sera = newCharacter('Sera', null, { avatarMediaId: 'avatar', sprites: { joy: 'joy' }, assetFiles: { 'assets/other/png/x.png': 'asset' } });
+    sera.links.media = ['avatar', 'shared'];
+    const ash = newCharacter('Ash');
+    ash.links.media = ['shared'];
+    p = upsertArtifact(p, 'characters', sera);
+    p = upsertArtifact(p, 'characters', ash);
+    return { p, sera, ash };
+}
+
+test('mediaUsage lists every way characters use a picture (an avatar is not also listed as gallery)', () => {
+    const { p, sera, ash } = picturesProject();
+    assert.deepEqual(mediaUsage(p, 'avatar'), [{ characterId: sera.id, name: 'Sera', how: 'avatar' }]);
+    assert.deepEqual(mediaUsage(p, 'shared'), [{ characterId: sera.id, name: 'Sera', how: 'gallery' }, { characterId: ash.id, name: 'Ash', how: 'gallery' }]);
+    assert.deepEqual(mediaUsage(p, 'joy'), [{ characterId: sera.id, name: 'Sera', how: 'sprite', label: 'joy' }]);
+    assert.deepEqual(mediaUsage(p, 'asset'), [{ characterId: sera.id, name: 'Sera', how: 'asset', path: 'assets/other/png/x.png' }]);
+    assert.deepEqual(mediaUsage(p, 'orphan1'), []);
+});
+
+test('unusedMedia finds the pictures nothing uses', () => {
+    const { p } = picturesProject();
+    assert.deepEqual(unusedMedia(p).map(m => m.id), ['orphan1', 'orphan2']);
+});
+
+test('removeMedia takes a picture out and clears every place that pointed at it, in one history entry', () => {
+    let { p, sera, ash } = picturesProject();
+    const before = p.history.length;
+    p = removeMedia(p, 'avatar');
+    assert.equal(p.history.length, before + 1);
+    assert.deepEqual(p.history.at(-1).target, { type: 'media', id: 'avatar' });
+    assert.equal(p.history.at(-1).action, 'remove');
+    p = removeMedia(p, 'joy');
+    p = removeMedia(p, 'asset');
+    const s = p.characters.find(c => c.id === sera.id);
+    assert.deepEqual(p.media.map(m => m.id), ['shared', 'orphan1', 'orphan2']);
+    assert.equal(s.avatarMediaId, '');
+    assert.deepEqual(s.links.media, ['shared']);
+    assert.deepEqual(s.sprites, {});
+    assert.deepEqual(s.assetFiles, {});
+    assert.deepEqual(p.characters.find(c => c.id === ash.id).links.media, ['shared'], 'other characters are untouched');
+});
+
+test('removing a character also removes the pictures only it used; shared and unrelated pictures stay', () => {
+    let { p, sera, ash } = picturesProject();
+    const before = p.history.length;
+    p = removeCharacter(p, sera.id);
+    assert.deepEqual(p.characters.map(c => c.id), [ash.id]);
+    assert.deepEqual(p.media.map(m => m.id), ['shared', 'orphan1', 'orphan2']);
+    assert.equal(p.history.length, before + 1, 'one step for the character and its pictures');
+    assert.deepEqual(p.history.at(-1).target, { type: 'characters', id: sera.id });
+});
+
+test('isUntouchedBlank: made with New character / New scenario and never edited', () => {
+    assert.equal(isUntouchedBlank(newCharacter('New character')), true);
+    assert.equal(isUntouchedBlank(newCharacter('New scenario', null, { kind: 'scenario' })), true);
+    assert.equal(isUntouchedBlank(newCharacter('Mira')), false, 'a named character is not blank');
+    const edited = newCharacter('New character');
+    edited.card.data.description = 'A tired cartographer.';
+    assert.equal(isUntouchedBlank(edited), false);
+    assert.equal(isUntouchedBlank({ ...newCharacter('New character'), origin: { kind: 'import' } }), false);
+    assert.equal(isUntouchedBlank({ ...newCharacter('New character'), avatarMediaId: 'm1' }), false);
+    assert.equal(isUntouchedBlank(null), false);
 });

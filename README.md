@@ -342,7 +342,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 | Area | What you can do |
 |---|---|
 | **Project** | Generate a complete roleplay; premise and notes; health (every validator in one list); relationships & dependencies; **Publish bundle** (ST-native files + manifest + README + re-importable project); **Apply to SillyTavern** (reviewed plan, snapshot and per-item backups) |
-| **Characters** | *Just build it for me* from a premise; distinct concepts to pick from; *Build the rest for me* (fills only what is empty, never duplicates); an AI box on every field (*Add to it* keeps what you wrote, *Rewrite*, three takes, *Write it* when empty); greetings with different openings; *Critique & fix*; full V3 editing (nickname, group-only greetings, multilingual notes, source, dates, assets, extensions); embedded lorebook ⇄ project lorebook; spec validation vs the **ST 1.19 support matrix**; import PNG/CHARX/JSON (V1/V2/V3), export ST-style PNG, spec-V3 PNG, CHARX and JSON; bring in from SillyTavern with its lorebook and sprites (feather in ST's character panel), apply back with a diff and a backup, or create in SillyTavern already linked to its lorebook, with fidelity read-back |
+| **Characters** | *Just build it for me* from a premise; distinct concepts to pick from; *Build the rest for me* (fills only what is empty, never duplicates); an AI box on every field (*Add to it* keeps what you wrote, *Rewrite*, three takes, *Write it* when empty); greetings with different openings; *Critique & fix*; full V3 editing (nickname, group-only greetings, multilingual notes, source, dates, assets, extensions); embedded lorebook ⇄ project lorebook; spec validation vs the **ST 1.19 support matrix**; import PNG/CHARX/JSON (V1/V2/V3) from a button, the tree's + menu, the project menu, Ctrl+K or by dropping the file; a view for every picture (who uses it, remove it everywhere; unused ones marked and cleared in one go); export ST-style PNG, spec-V3 PNG, CHARX and JSON; bring in from SillyTavern with its lorebook and sprites (feather in ST's character panel), apply back with a diff and a backup, or create in SillyTavern already linked to its lorebook, with fidelity read-back |
 | **Lore** | *Build the world* (linked to the character automatically); the same AI box on entry content (it knows the book's other entries and the characters it serves); every 1.19 entry control; lint; **activation preview** that explains why each entry fires, what beat it, and what reaches the model; extraction from text or the current chat; contradiction and gap audit; key suggestions |
 | **Prompts & Presets** | Generate a preset from goals or from the project; Chat Completion Prompt Manager editor (order, enable, roles, relative/in-chat depth, triggers, forbid overrides, divider markers used by large community presets); samplers and formatting; assembled-prompt preview with token counts from ST's tokenizer; **live dry run**; AI critique; versions and compare; Text Completion instruct/context/system-prompt/reasoning templates rendered by **SillyTavern's own functions**; connection profiles shown as *selections*, separate from preset contents |
 | **Regex Lab** | One-click recipes; global, preset-scoped and character-scoped scripts in engine order; **stage preview** (saved text, display, prompt, edit, World Info, reasoning) with fixtures, in a worker with a timeout; lint; order-sensitivity detection; hands-free mode adds only scripts that pass their own tests |
@@ -424,6 +424,19 @@ No. Pulling something from SillyTavern makes a copy in the project. Changes go b
 Yes. Click the feather in SillyTavern's character panel (or <i>Start from one of my characters…</i> in the studio). Its
 lorebook and sprites come along. Then press <b>Critique &amp; fix</b> to improve it, or <b>Build the rest for me</b> to add
 what is missing: empty fields, openings, a lorebook, a preset and so on. What you wrote stays untouched.
+
+A card file works too (PNG, CHARX or JSON): drop it anywhere on the studio, or use <b>Import card…</b>. You'll find it
+on the Characters page, under the <b>+</b> next to <i>Characters &amp; scenarios</i>, in the project menu at the top
+left and in Ctrl+K. Opened an empty character by mistake? It offers <b>Import card…</b> right at the top, and the card
+takes its place.
+</details>
+
+<details>
+<summary><b>How do I get rid of pictures I don't need?</b></summary>
+<br />
+Click a picture under <b>Media</b>: you see it, which characters use it and how, and <b>Remove from project</b> clears
+it everywhere at once. Pictures no character uses are marked <i>unused</i>, and the broom on <b>Media</b> removes them
+all. Removing a character takes the pictures only it used. Ctrl+Z brings any of it back.
 </details>
 
 <details>
@@ -455,7 +468,7 @@ About a dozen: one per step, plus the occasional retry or repair. With a fast cl
 <br />
 In your SillyTavern user files (<code>data/&lt;user&gt;/user/files/cstudio-*.json</code>), saved automatically, with media
 next to them. They follow you across browsers on the same SillyTavern. <b>Project → Publish bundle</b> makes a portable
-zip, and <b>Open project file…</b> imports one.
+zip, and <b>Open file…</b> opens one (give it a character card and it imports the character instead).
 </details>
 
 <details>

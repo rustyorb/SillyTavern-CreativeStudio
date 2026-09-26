@@ -1,21 +1,22 @@
 // Project assembly: overview, health, relationships/dependencies, publish bundle, deliberate apply-to-SillyTavern plan.
-import { html, useState, useMemo, useEffect, Button, Icon, Badge, TextInput, TextArea, Section, Empty, Diagnostics, Modal, Toggle, Select, downloadBlob, pickFile, fileBytes, cx } from '../kit.js';
-import { dependencyReport, artifactName, findArtifact, migrateProject, logHistory, createProject, cardForSt, stWorldName } from '../../core/project.js';
+import { html, useState, useMemo, useEffect, Button, Icon, Badge, TextInput, TextArea, Section, Empty, Diagnostics, Modal, Toggle, Select, downloadBlob, pickFile, cx } from '../kit.js';
+import { dependencyReport, artifactName, findArtifact, logHistory, createProject, cardForSt, stWorldName } from '../../core/project.js';
 import { validateCardV3 } from '../../core/card.js';
 import { lintWorld } from '../../core/lorebook.js';
 import { lintCc } from '../../core/preset.js';
 import { lintScripts } from '../../core/regex.js';
 import { lintSet } from '../../core/qr.js';
-import { buildBundle, isStudioProjectFile } from '../../core/bundle.js';
+import { buildBundle } from '../../core/bundle.js';
 import { exportCard } from '../../core/cardio.js';
-import { zipSync, unzipSync, strFromU8 } from '../../../vendor/fflate.mjs';
+import { zipSync } from '../../../vendor/fflate.mjs';
 import { mediaBytes, toPngBytes } from '../media.js';
 import { applyCardToSt, importIntoSt, saveStWorld, saveStPreset, saveStGlobalRegex, getStCharacter, listStWorlds, listStPresets } from '../../st/live.js';
 import { installQrSetLive } from '../../st/stscript-live.js';
 import { recordBackup } from '../inspector.js';
 import { KINDS, stripSensitive } from '../../core/preset.js';
-import { clone, uid, utf8Decode } from '../../core/bytes.js';
+import { clone } from '../../core/bytes.js';
 import { Generator } from '../generator.js';
+import { CARD_FILES, importAnyFile } from '../importer.js';
 const AREA_FOR_TYPE = { characters: 'characters', lorebooks: 'lore', presets: 'prompts', regexScripts: 'regex', qrSets: 'scripts', media: 'characters' };
 
 export function ProjectArea({ store, env, project, select, setArea }) {
@@ -25,32 +26,18 @@ export function ProjectArea({ store, env, project, select, setArea }) {
     const health = useMemo(() => projectHealth(project), [project]);
     const deps = useMemo(() => dependencyReport(project), [project]);
     const counts = [['characters', 'user'], ['lorebooks', 'book'], ['presets', 'sliders'], ['regexScripts', 'code'], ['qrSets', 'terminal'], ['media', 'image'], ['playtests', 'flask']];
-    const importProject = async () => {
-        const f = await pickFile('.json,.zip');
+    // A project or bundle opens; a character card is imported into this project and opened.
+    const openFile = async () => {
+        const f = await pickFile(`.zip,${CARD_FILES}`);
         if (!f) return;
-        try {
-            const bytes = await fileBytes(f);
-            let json;
-            if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-                const z = unzipSync(bytes);
-                if (!z['project.studio.json']) throw new Error('This zip is not a Creative Studio bundle (no project.studio.json)');
-                json = JSON.parse(strFromU8(z['project.studio.json']));
-            } else json = JSON.parse(utf8Decode(bytes));
-            if (!isStudioProjectFile(json)) throw new Error('Not a Creative Studio project');
-            const p = migrateProject(json);
-            const existing = (await env.storage.listProjects()).some(x => x.id === p.id);
-            if (existing) { p.id = `prj_${uid()}`; p.name = `${p.name} (imported)`; }
-            await env.saveNow();
-            store.reset(logHistory(p, { actor: 'import', action: 'import-project', summary: `Imported project from ${f.name}` }));
-            await env.saveNow();
-            env.toast(`Opened “${p.name}”`, 'ok');
-        } catch (e) { env.toast(`Import failed: ${e.message}`, 'error', 7000); }
+        const r = await importAnyFile(store, env, f);
+        if (r.character) select('characters', r.character.id);
     };
     return html`<div class="cs-area-head">
             <h3><${Icon} name="diagram-project" /></h3>
             <input class="text_pole" style="max-width:360px;font-weight:600" value=${project.name} aria-label="Project name" onInput=${e => set('name', e.currentTarget.value, 'Renamed project')} />
             <div class="cs-spacer"></div>
-            <${Button} icon="file-import" label="Open project file…" title="A project.studio.json or a bundle zip" onClick=${importProject} />
+            <${Button} icon="file-import" label="Open file…" title="A Creative Studio project or bundle opens; a character card (PNG, CHARX or JSON) is imported into this project" onClick=${openFile} />
             <${Button} icon="box-archive" label="Publish bundle…" onClick=${() => setPublishOpen(true)} />
             <${Button} kind="primary" icon="upload" label="Apply to SillyTavern…" onClick=${() => setApplyOpen(true)} />
         </div>

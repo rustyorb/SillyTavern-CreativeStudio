@@ -522,3 +522,45 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 }
 .cs-studio .cs-textarea.cs-landed { animation: cs-landed 1.6s ease-out; }
 @media (prefers-reduced-motion: reduce) { .cs-studio .cs-textarea.cs-landed { animation-duration: 0.01s; } }
+
+/* --- Bringing cards in: the tree's + menu, menu actions, drop overlay, empty-character hint --- */
+.cs-addmenu { position: relative; }
+.cs-addmenu-menu { min-width: 260px; }
+.cs-menu-action > span { display: inline-flex; align-items: center; gap: 8px; }
+.cs-menu-action i { width: 1.1em; text-align: center; }
+.cs-drop-overlay {
+    position: absolute; inset: 0; z-index: 60; pointer-events: none;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--cs-bg) 55%, transparent);
+    outline: 2px dashed var(--cs-accent); outline-offset: -10px;
+}
+.cs-drop-card {
+    display: flex; align-items: center; gap: 10px; padding: 14px 22px; font-size: 1.15em;
+    background: var(--cs-panel); border: 1px solid var(--cs-accent); border-radius: var(--cs-radius);
+    box-shadow: 0 6px 24px var(--SmartThemeShadowColor);
+}
+.cs-blank-hint {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px;
+    border: 1px dashed color-mix(in srgb, var(--cs-accent) 70%, transparent); border-radius: var(--cs-radius);
+    background: color-mix(in srgb, var(--cs-accent) 7%, transparent);
+}
+.cs-blank-hint > span { flex: 1; min-width: 220px; }
+
+/* --- One picture: preview, who uses it, facts --- */
+.cs-kind.cs-unused { color: var(--cs-warn); border-color: color-mix(in srgb, var(--cs-warn) 45%, transparent); }
+.cs-media-view { display: grid; grid-template-columns: minmax(220px, 1.2fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+.cs-media-preview {
+    margin: 0; min-height: 240px; padding: 10px; display: grid; place-items: center;
+    border: 1px solid var(--cs-line); border-radius: var(--cs-radius);
+    /* A checkerboard, so transparent sprites and cutouts read as transparent. */
+    background: repeating-conic-gradient(var(--cs-faint) 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+}
+.cs-media-preview img { max-width: 100%; max-height: 62vh; object-fit: contain; border-radius: 4px; }
+.cs-media-preview > i { font-size: 3em; color: var(--cs-dim); }
+.cs-media-uses { margin: 0; padding-left: 1.1em; }
+.cs-media-uses li { margin: 2px 0; }
+.cs-media-uses .cs-muted { margin-left: 6px; }
+.cs-media-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+.cs-media-facts dt { color: var(--cs-dim); }
+.cs-media-facts dd { margin: 0; }
+@media (max-width: 900px) { .cs-media-view { grid-template-columns: 1fr; } }

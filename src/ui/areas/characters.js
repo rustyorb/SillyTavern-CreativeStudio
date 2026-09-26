@@ -14,11 +14,12 @@ import { useAiAssist } from '../ai-assist.js';
 import { contentOf, imageRating } from '../../core/content.js';
 import { newRun } from '../../ai/pipeline.js';
 import {
-    findArtifact, editArtifactField, upsertArtifact, newCharacter, removeArtifact, logHistory, acceptProposal, rejectProposal, cardForSt, setSprite,
+    findArtifact, editArtifactField, upsertArtifact, newCharacter, logHistory, acceptProposal, rejectProposal, cardForSt, setSprite,
+    removeCharacter, isUntouchedBlank,
 } from '../../core/project.js';
 import { validateCardV3, splitExamples, joinExamples, fieldStats, emptyCardV3, tidyExamples } from '../../core/card.js';
 import { cardFeatureUsage, STATUS_LABEL } from '../../core/compat.js';
-import { importCardFile, exportCard, EXPORT_KINDS, withSpriteAssets } from '../../core/cardio.js';
+import { exportCard, EXPORT_KINDS, withSpriteAssets } from '../../core/cardio.js';
 import { CARD_FIELDS, FIELD_LABELS, tidyTags } from '../../ai/tasks.js';
 import { characterBookToWorld, worldToCharacterBook, normalizeWorld } from '../../core/lorebook.js';
 import { clone, uid } from '../../core/bytes.js';
@@ -26,9 +27,12 @@ import { importIntoSt, applyCardToSt, getStCharacter, stSpriteFolder } from '../
 import { jsonDiff } from '../../core/diff.js';
 import { saveMedia, mediaBytes, toPngBytes } from '../media.js';
 import { recordBackup } from '../inspector.js';
+import { openCardImport } from '../importer.js';
+import { MediaView } from './media.js';
 
 export function CharactersArea(props) {
     const { project, selection } = props;
+    if (selection?.type === 'media') return html`<${MediaView} ...${props} key=${selection.id} />`;
     const ch = selection?.type === 'characters' ? findArtifact(project, 'characters', selection.id) : null;
     if (ch) return html`<${CharacterEditor} ...${props} ch=${ch} key=${ch.id} />`;
     return html`<${CharacterHome} ...${props} />`;
@@ -41,44 +45,13 @@ function CharacterHome({ store, env, project, select }) {
         store.update(p => upsertArtifact(p, 'characters', art, { action: 'create', actor: art.origin?.kind === 'import' ? 'import' : 'user', summary }), 'create character');
         select('characters', art.id);
     };
-    const importFile = async () => {
-        const file = await pickFile('.png,.json,.charx');
-        if (!file) return;
-        try {
-            const bytes = await fileBytes(file);
-            const imported = importCardFile(bytes, file.name);
-            const art = newCharacter(imported.card.data.name, imported.card, {
-                topLevelExtras: imported.topLevelExtras,
-                origin: { kind: 'import', file: file.name, format: imported.format, report: imported.report, diagnostics: imported.diagnostics, at: new Date().toISOString() },
-            });
-            if (imported.image) {
-                const { media, apply } = await saveMedia(env, store.get(), imported.image, { name: `${art.card.data.name} avatar`, role: 'avatar' });
-                store.update(apply, 'add media');
-                art.avatarMediaId = media.id;
-                art.links.media = [media.id];
-            }
-            const extraFiles = Object.entries(imported.assetFiles ?? {});
-            if (extraFiles.length) {
-                art.assetFiles = {};
-                for (const [path, data] of extraFiles) {
-                    const { media, apply } = await saveMedia(env, store.get(), data, { name: path, role: 'charx-asset', mime: 'application/octet-stream' });
-                    store.update(apply, 'add media');
-                    art.assetFiles[path] = media.id;
-                }
-            }
-            add(art, `Imported ${file.name} (${imported.format})`);
-            env.toast(`Imported ${art.card.data.name} from ${imported.format}`, 'ok');
-        } catch (e) {
-            env.toast(`Import failed: ${e.message}`, 'error', 7000);
-        }
-    };
     const chars = project.characters;
     return html`<div class="cs-area-head">
             <h3><${Icon} name="user-pen" /> Characters & scenarios</h3>
             <div class="cs-spacer"></div>
             <${Button} icon="user-plus" label="New character" onClick=${() => add(newCharacter('New character'), 'New character')} />
             <${Button} icon="masks-theater" label="New scenario" title="Scenario / narrator card" onClick=${() => add(newCharacter('New scenario', null, { kind: 'scenario' }), 'New scenario')} />
-            <${Button} icon="file-import" label="Import file…" title="PNG (chara/ccv3), CHARX, or JSON (V1/V2/V3)" onClick=${importFile} />
+            <${Button} icon="file-import" label="Import card…" title="A character card: PNG, CHARX or JSON. You can also drop a card anywhere on the studio." onClick=${() => openCardImport()} />
             <${Button} icon="user-plus" label="From SillyTavern…" title="Bring in one of your SillyTavern characters with its lorebook and sprites" onClick=${openPullPicker} />
         </div>
         <div class="cs-area-body">
@@ -97,7 +70,7 @@ function CharacterHome({ store, env, project, select }) {
                             <td>${issues.length ? html`<${Badge} kind="warn">${issues.length}</${Badge}>` : html`<${Badge} kind="ok">ok</${Badge}>`}</td>
                         </tr>`;
                     })}</tbody>
-                </table>` : html`<${Empty} icon="user-pen" title="No characters yet">Start from a premise above, import a card, or pull one from SillyTavern.</${Empty}>`}
+                </table>` : html`<${Empty} icon="user-pen" title="No characters yet">Start from a premise above, import a card (or drop one here), or bring one in from SillyTavern.</${Empty}>`}
             </${Section}>
         </div>`;
 }
@@ -208,8 +181,10 @@ function CharacterEditor(props) {
     const avatar = ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null;
     const tabs = EDITOR_TABS.map(t => ({ ...t, badge: t.id === 'compat' ? issues.filter(i => i.level === 'error').length : t.id === 'greetings' ? 1 + (d.alternate_greetings?.length ?? 0) : undefined }));
     const remove = async () => {
-        if (!(await env.confirm(`Remove ${d.name} from the project?`, 'Nothing in SillyTavern is deleted. You can undo with Ctrl+Z.'))) return;
-        store.update(p => removeArtifact(p, 'characters', ch.id, { summary: `Removed ${d.name}` }), 'remove character');
+        const pictures = project.media.length - removeCharacter(project, ch.id).media.length;
+        const also = pictures === 1 ? ' The picture only it uses goes too.' : pictures > 1 ? ` The ${pictures} pictures only it uses go too.` : '';
+        if (!(await env.confirm(`Remove ${d.name} from the project?`, `Nothing in SillyTavern is deleted.${also} You can undo with Ctrl+Z.`))) return;
+        store.update(p => removeCharacter(p, ch.id), 'remove character');
         props.setSelection(null);
     };
     const ep = { ...props, setData, setPath, d, setTab };
@@ -226,6 +201,11 @@ function CharacterEditor(props) {
         </div>
         <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
         <div class="cs-area-body">
+            ${isUntouchedBlank(ch) && html`<div class="cs-blank-hint" role="note">
+                <${Icon} name="file-import" />
+                <span>This ${ch.kind === 'scenario' ? 'scenario' : 'character'} is empty. Have a card already? Import it in place of this one, or fill in the fields below.</span>
+                <${Button} small kind="primary" icon="file-import" label="Import card…" onClick=${() => openCardImport({ replaceId: ch.id })} />
+            </div>`}
             ${ch.concept && tab === 'core' && html`<${ConceptPanel} ...${ep} />`}
             ${tab === 'core' && html`<${CoreTab} ...${ep} />`}
             ${tab === 'greetings' && html`<${GreetingsTab} ...${ep} />`}

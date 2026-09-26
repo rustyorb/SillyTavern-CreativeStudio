@@ -38,6 +38,7 @@ export function Palette({ project, areas, onClose, onPick }) {
         const all = [
             ...areas.map(a => ({ kind: 'area', id: a.id, icon: a.icon, title: a.label, sub: `Workshop · Alt+${a.key}` })),
             ...Object.entries(TYPE_META).flatMap(([type, m]) => project[type].map(a => ({ kind: 'artifact', type, id: a.id, icon: m.icon, title: artifactName(type, a), sub: m.label }))),
+            { kind: 'action', id: 'import-card', icon: 'file-import', title: 'Import a character card…', sub: 'PNG, CHARX or JSON' },
             { kind: 'action', id: 'pull', icon: 'user-plus', title: 'Bring in a SillyTavern character…', sub: 'with its lorebook and sprites' },
             { kind: 'action', id: 'prompts', icon: 'scroll', title: 'AI instructions & content level…', sub: 'edit what the AI is told' },
             { kind: 'action', id: 'undo', icon: 'rotate-left', title: 'Undo', sub: 'Ctrl+Z' },

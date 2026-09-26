@@ -1,6 +1,9 @@
 // Three-pane workbench: project tree | area editor | inspector.
-import { html, useState, Icon, Button, Badge, cx } from './kit.js';
-import { artifactName, upsertArtifact, newCharacter } from '../core/project.js';
+import { html, useState, useEffect, useRef, Icon, Button, Badge, cx } from './kit.js';
+import { artifactName, upsertArtifact, newCharacter, unusedMedia } from '../core/project.js';
+import { openCardImport } from './importer.js';
+import { openPullPicker } from './st-pull.js';
+import { removeUnusedPictures } from './areas/media.js';
 import { ProjectArea } from './areas/project.js';
 import { CharactersArea } from './areas/characters.js';
 import { LoreArea } from './areas/lore.js';
@@ -15,7 +18,16 @@ import { newRegexArtifact } from './areas/regex.js';
 import { newQrSetArtifact } from './areas/scripts.js';
 
 const TREE = [
-    { type: 'characters', label: 'Characters & scenarios', icon: 'user', area: 'characters', create: () => newCharacter('New character') },
+    {
+        type: 'characters', label: 'Characters & scenarios', icon: 'user', area: 'characters',
+        // Adding a character has several starts; the + asks which instead of silently making a blank one.
+        menu: [
+            { icon: 'user', label: 'New character', create: () => newCharacter('New character') },
+            { icon: 'masks-theater', label: 'New scenario', create: () => newCharacter('New scenario', null, { kind: 'scenario' }) },
+            { icon: 'file-import', label: 'Import card…', hint: 'PNG, CHARX or JSON', run: () => openCardImport() },
+            { icon: 'user-plus', label: 'From SillyTavern…', hint: 'with its lorebook and sprites', run: () => openPullPicker() },
+        ],
+    },
     { type: 'lorebooks', label: 'Lorebooks', icon: 'book', area: 'lore', create: () => newLorebookArtifact('New lorebook') },
     { type: 'presets', label: 'Presets', icon: 'sliders', area: 'prompts', create: () => newPresetArtifact('cc', 'New Chat Completion preset') },
     { type: 'connectionProfiles', label: 'Connection profiles', icon: 'plug', area: 'prompts' },
@@ -36,11 +48,12 @@ export function Workspace(props) {
         setArea(AREA_FOR_TYPE[type] ?? area);
     };
 
-    const create = t => {
-        const art = t.create();
-        store.update(p => upsertArtifact(p, t.type, art, { action: 'create', summary: `Created ${artifactName(t.type, art)}` }), `create ${t.type}`);
-        select(t.type, art.id);
+    const create = (type, make) => {
+        const art = make();
+        store.update(p => upsertArtifact(p, type, art, { action: 'create', summary: `Created ${artifactName(type, art)}` }), `create ${type}`);
+        select(type, art.id);
     };
+    const unusedCount = unusedMedia(project).length;
 
     const areaProps = { ...props, select };
     const q = filter.trim().toLowerCase();
@@ -62,7 +75,9 @@ export function Workspace(props) {
                         <button class="cs-tree-toggle" onClick=${() => setCollapsed({ ...collapsed, [t.type]: !isCollapsed })} aria-expanded=${!isCollapsed}>
                             <${Icon} name=${isCollapsed ? 'caret-right' : 'caret-down'} /><${Icon} name=${t.icon} /> <span>${t.label}</span> <${Badge}>${project[t.type].length}</${Badge}>
                         </button>
-                        ${t.create && html`<${Button} small icon="plus" title=${`New ${t.label.toLowerCase()}`} onClick=${() => create(t)} />`}
+                        ${t.create && html`<${Button} small icon="plus" title=${`New ${t.label.toLowerCase()}`} onClick=${() => create(t.type, t.create)} />`}
+                        ${t.menu && html`<${AddMenu} label=${`Add to ${t.label.toLowerCase()}`} items=${t.menu.map(i => ({ ...i, run: i.run ?? (() => create(t.type, i.create)) }))} />`}
+                        ${t.type === 'media' && unusedCount > 0 && html`<${Button} small icon="broom" title=${`Remove ${unusedCount} unused picture${unusedCount === 1 ? '' : 's'}`} onClick=${() => removeUnusedPictures(store, env)} />`}
                     </div>
                     ${!isCollapsed && html`<ul class="cs-tree-items">
                         ${rows.map(r => html`<li key=${r.key}>
@@ -98,12 +113,41 @@ function treeRows(t, project, q) {
     const row = (type, a) => ({ key: a.id, type, id: a.id, label: artifactName(type, a), badge: treeBadge(type, a) });
     if (t.type !== 'media') return project[t.type].map(a => row(t.type, a)).filter(match);
     const spriteIds = new Set(project.characters.flatMap(c => Object.values(c.sprites ?? {})));
-    const rows = project.media.filter(m => !spriteIds.has(m.id)).map(m => row('media', m));
+    const unused = new Set(unusedMedia(project).map(m => m.id));
+    const rows = project.media.filter(m => !spriteIds.has(m.id)).map(m => ({
+        ...row('media', m),
+        badge: unused.has(m.id) ? html`<span class="cs-kind cs-unused" title="No character uses this picture">unused</span>` : null,
+    }));
     for (const c of project.characters) {
         const n = Object.keys(c.sprites ?? {}).length;
         if (n) rows.push({ key: `sprites:${c.id}`, type: 'characters', id: c.id, folded: true, label: `${c.card.data.name} — ${n} expression sprite${n === 1 ? '' : 's'}`, badge: html`<${Icon} name="face-smile" />` });
     }
     return rows.filter(match);
+}
+
+/** A tree group's + as a small menu (click outside or Escape closes it without closing the studio). */
+function AddMenu({ label, items }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!open) return undefined;
+        const outside = e => { if (!ref.current?.contains(e.target)) setOpen(false); };
+        const escape = e => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
+        document.addEventListener('mousedown', outside, true);
+        document.addEventListener('keydown', escape, true);
+        return () => {
+            document.removeEventListener('mousedown', outside, true);
+            document.removeEventListener('keydown', escape, true);
+        };
+    }, [open]);
+    return html`<div class="cs-addmenu" ref=${ref}>
+        <${Button} small icon="plus" title=${label} ariaPressed=${open} onClick=${() => setOpen(!open)} />
+        ${open && html`<div class="cs-projsw-menu cs-addmenu-menu" role="menu" aria-label=${label}>
+            ${items.map(i => html`<button role="menuitem" class="cs-projsw-item cs-menu-action" key=${i.label} onClick=${() => { setOpen(false); i.run(); }}>
+                <span><${Icon} name=${i.icon} /> ${i.label}</span>${i.hint && html`<small>${i.hint}</small>`}
+            </button>`)}
+        </div>`}
+    </div>`;
 }
 
 function treeBadge(type, a) {

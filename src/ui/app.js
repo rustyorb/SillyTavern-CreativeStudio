@@ -1,14 +1,15 @@
 // Creative Studio workbench shell: project tree | focused editor | inspector (AI proposals, history, diagnostics).
 import { render } from '../../vendor/preact-htm.mjs';
-import { html, useState, useEffect, useCallback, useMemo, Button, Icon, Badge, cx } from './kit.js';
+import { html, useState, useEffect, useCallback, useMemo, Button, Icon, Badge, cx, pickFile } from './kit.js';
 import { createStore, useStore } from './store.js';
-import { createProject } from '../core/project.js';
+import { createProject, findArtifact, isUntouchedBlank } from '../core/project.js';
 import { Workspace, AREA_FOR_TYPE } from './workspace.js';
 import { Palette } from './palette.js';
 import { isHandsFree } from './proposals.js';
 import { AiSetup } from './providers-panel.js';
-import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt } from './st-pull.js';
+import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt, openPullPicker } from './st-pull.js';
 import { PromptSettings, ContentPill } from './prompt-settings.js';
+import { CARD_FILES, importAnyFile, openCardImport } from './importer.js';
 
 /** A new project starts with the creation model chosen last time (if that profile still exists). */
 function withDefaultCreationModel(project) {
@@ -106,6 +107,44 @@ function Studio({ store, env, initialRoute, onClose }) {
         globalThis.addEventListener('cs-prompt-settings', open);
         return () => globalThis.removeEventListener('cs-prompt-settings', open);
     }, []);
+
+    // Cards come in from Import card… (buttons, menus, Ctrl+K) or by dropping files on the studio; the new character opens.
+    const openCharacter = c => { setArea('characters'); setSelection({ type: 'characters', id: c.id }); };
+    const blankInView = () => (selection?.type === 'characters' && isUntouchedBlank(findArtifact(store.get(), 'characters', selection.id)) ? selection.id : undefined);
+    useEffect(() => {
+        const onImport = async e => {
+            const file = await pickFile(CARD_FILES);
+            if (!file) return;
+            const r = await importAnyFile(store, env, file, { replaceId: e.detail?.replaceId });
+            if (r.character) openCharacter(r.character);
+        };
+        globalThis.addEventListener('cs-import-card', onImport);
+        return () => globalThis.removeEventListener('cs-import-card', onImport);
+    }, []);
+    const [dropping, setDropping] = useState(false);
+    const carriesFiles = e => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const onDragOver = e => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        // SillyTavern imports anything dropped on its page into its own character list; a drop here is the studio's.
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+    };
+    const onDragLeave = e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); };
+    const onDrop = async e => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDropping(false);
+        let replaceId = blankInView();
+        let last = null;
+        for (const file of Array.from(e.dataTransfer.files)) {
+            const r = await importAnyFile(store, env, file, { replaceId });
+            if (r.character) { last = r.character; replaceId = undefined; }
+        }
+        if (last) openCharacter(last);
+    };
     useEffect(() => {
         const take = async () => {
             const avatar = pendingStCharacter;
@@ -180,7 +219,8 @@ function Studio({ store, env, initialRoute, onClose }) {
         }
     }, [store, env, onClose]);
 
-    return html`<div class="cs-studio" onKeyDown=${onKey} tabIndex="-1" role="application" aria-label="Creative Studio">
+    return html`<div class="cs-studio" onKeyDown=${onKey} tabIndex="-1" role="application" aria-label="Creative Studio"
+        onDragEnter=${onDragOver} onDragOver=${onDragOver} onDragLeave=${onDragLeave} onDrop=${onDrop}>
         <header class="cs-topbar">
             <div class="cs-brand"><${Icon} name="feather-pointed" /> Creative Studio</div>
             <${ProjectSwitcher} store=${store} env=${env} project=${project} />
@@ -219,12 +259,16 @@ function Studio({ store, env, initialRoute, onClose }) {
             else if (i.id === 'proposals') openInspectorAt('proposals');
             else if (i.id === 'inspector') setInspectorOpen(!inspectorOpen);
             else if (i.id === 'pull') setPullOpen(true);
+            else if (i.id === 'import-card') openCardImport();
             else if (i.id === 'prompts') setPromptsOpen(true);
         }} />`}
         ${pullOpen && html`<${StCharacterPicker} store=${store} env=${env} project=${project} onClose=${() => setPullOpen(false)} onDone=${showPulled} />`}
         ${promptsOpen && html`<${PromptSettings} store=${store} env=${env} project=${project} onClose=${() => setPromptsOpen(false)} />`}
         ${aiSetupOpen && html`<${AiSetup} store=${store} env=${env} project=${project} onClose=${() => setAiSetupOpen(false)} />`}
         ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
+        ${dropping && html`<div class="cs-drop-overlay" aria-hidden="true">
+            <div class="cs-drop-card"><${Icon} name="file-import" /> Drop a character card to import it into “${project.name}”</div>
+        </div>`}
     </div>`;
 }
 
@@ -260,8 +304,11 @@ function ProjectSwitcher({ store, env, project }) {
                 <span>${p.name}</span><small>${new Date(p.modified).toLocaleString()}</small>
             </button>`)}
             <hr />
-            <button role="menuitem" class="cs-projsw-item" onClick=${create}><${Icon} name="plus" /> New project…</button>
-            <button role="menuitem" class="cs-projsw-item" onClick=${rename}><${Icon} name="i-cursor" /> Rename…</button>
+            <button role="menuitem" class="cs-projsw-item cs-menu-action" onClick=${() => { setOpen(false); openCardImport(); }}><span><${Icon} name="file-import" /> Import a character card…</span></button>
+            <button role="menuitem" class="cs-projsw-item cs-menu-action" onClick=${() => { setOpen(false); openPullPicker(); }}><span><${Icon} name="user-plus" /> Bring in from SillyTavern…</span></button>
+            <hr />
+            <button role="menuitem" class="cs-projsw-item cs-menu-action" onClick=${create}><span><${Icon} name="plus" /> New project…</span></button>
+            <button role="menuitem" class="cs-projsw-item cs-menu-action" onClick=${rename}><span><${Icon} name="i-cursor" /> Rename…</span></button>
         </div>`}
     </div>`;
 }
