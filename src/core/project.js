@@ -4,6 +4,7 @@
 
 import { clone, uid, stableStringify, hashString } from './bytes.js';
 import { emptyCardV3 } from './card.js';
+import { embeddedPath } from './charx.js';
 import { getPath, setPath, jsonDiff } from './diff.js';
 
 export const PROJECT_SCHEMA = 'st-creative-studio/project';
@@ -145,22 +146,39 @@ export function unusedMedia(project) {
     return project.media.filter(m => !used.has(m.id));
 }
 
-/** A character with every reference to one picture cleared (avatar, sprite slots, asset files; links are removeArtifact's). */
-function withoutMedia(c, mediaId) {
+/**
+ * A character with every reference to the gone pictures cleared: avatar, gallery, sprite slots, CHARX asset files and
+ * the card's own asset entries for those files (a stale icon entry would keep a CHARX export from using the avatar).
+ */
+function withoutMedia(c, gone) {
     let next = c;
-    if (c.avatarMediaId === mediaId) next = { ...next, avatarMediaId: '' };
-    for (const key of ['sprites', 'assetFiles']) {
-        const map = c[key];
-        if (map && Object.values(map).includes(mediaId)) next = { ...next, [key]: Object.fromEntries(Object.entries(map).filter(([, id]) => id !== mediaId)) };
+    if (gone.has(c.avatarMediaId)) next = { ...next, avatarMediaId: '' };
+    const gallery = c.links?.media;
+    if (gallery?.some(id => gone.has(id))) next = { ...next, links: { ...next.links, media: gallery.filter(id => !gone.has(id)) } };
+    if (c.sprites && Object.values(c.sprites).some(id => gone.has(id))) {
+        next = { ...next, sprites: Object.fromEntries(Object.entries(c.sprites).filter(([, id]) => !gone.has(id))) };
+    }
+    if (c.assetFiles && Object.values(c.assetFiles).some(id => gone.has(id))) {
+        const lost = new Set(Object.entries(c.assetFiles).filter(([, id]) => gone.has(id)).map(([path]) => path));
+        next = { ...next, assetFiles: Object.fromEntries(Object.entries(c.assetFiles).filter(([path]) => !lost.has(path))) };
+        const assets = c.card?.data?.assets;
+        if (assets?.some(a => lost.has(embeddedPath(a.uri)))) {
+            next = { ...next, card: { ...next.card, data: { ...next.card.data, assets: assets.filter(a => !lost.has(embeddedPath(a.uri))) } } };
+        }
     }
     return next;
+}
+
+/** Clear every character's references to these pictures (the pictures themselves are the caller's to remove). */
+export function forgetMedia(project, mediaIds) {
+    const gone = new Set(mediaIds);
+    return gone.size ? { ...project, characters: project.characters.map(c => withoutMedia(c, gone)) } : project;
 }
 
 /** Remove a picture and every place that shows it, as one history entry. */
 export function removeMedia(project, mediaId, historyEntry = {}) {
     const m = findArtifact(project, 'media', mediaId);
-    let p = removeArtifact(project, 'media', mediaId);
-    p = { ...p, characters: p.characters.map(c => withoutMedia(c, mediaId)) };
+    const p = forgetMedia(removeArtifact(project, 'media', mediaId), [mediaId]);
     return logHistory(p, { target: { type: 'media', id: mediaId }, action: 'remove', summary: `Removed picture ${m?.name ?? mediaId}`, ...historyEntry });
 }
 
@@ -179,13 +197,20 @@ export function removeCharacter(project, characterId, historyEntry = {}) {
 
 const BLANK_NAMES = new Set(['New character', 'New scenario']);
 
-/** Made with New character / New scenario and never edited: an import can take its place. */
-export function isUntouchedBlank(c) {
-    if (!c || c.origin?.kind !== 'new' || c.avatarMediaId || c.concept) return false;
-    if ([c.sprites, c.assetFiles].some(map => Object.keys(map ?? {}).length)) return false;
-    if (Object.values(c.links ?? {}).some(ids => ids?.length)) return false;
-    const name = c.card?.data?.name;
-    return BLANK_NAMES.has(name) && stableStringify(c.card) === stableStringify(emptyCardV3(name));
+/**
+ * Made with New character / New scenario and never touched, so an import can take its place: exactly what
+ * newCharacter makes (any added field, even an AI-written appearance, is work) and, given the project, nothing else
+ * points at it: no proposal waiting for it, no build filling it, no playtest using it. Its own history entry is only a
+ * record.
+ */
+export function isUntouchedBlank(c, project = null) {
+    const name = c?.card?.data?.name;
+    if (!c || !BLANK_NAMES.has(name)) return false;
+    const fresh = newCharacter(name, null, { kind: c.kind });
+    if (stableStringify({ ...c, id: '' }) !== stableStringify({ ...fresh, id: '' })) return false;
+    if (!project) return true;
+    const { history, characters, ...rest } = project;
+    return !JSON.stringify(rest).includes(c.id) && !characters.some(x => x.id !== c.id && JSON.stringify(x).includes(c.id));
 }
 
 /** New character artifact wrapper. */

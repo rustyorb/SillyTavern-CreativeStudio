@@ -3,7 +3,7 @@
 // Pure: the AI call is injected (runTask), so the pipeline is unit-testable with a fake model.
 
 import { clone, uid } from '../core/bytes.js';
-import { newCharacter, upsertArtifact, editArtifactField, findArtifact, logHistory, now, createProposal, addProposals } from '../core/project.js';
+import { newCharacter, upsertArtifact, editArtifactField, findArtifact, logHistory, now, createProposal, addProposals, forgetMedia } from '../core/project.js';
 import { emptyCardV3, tidyExamples } from '../core/card.js';
 import { newEntry } from '../core/lorebook.js';
 import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
@@ -353,6 +353,8 @@ export function discardRun(project, run) {
             }),
         };
     }
+    // A kept character's avatar, sprites or asset files may point at a picture the run painted; those go too.
+    p = forgetMedia(p, created.filter(c => c.type === 'media').map(c => c.id));
     p = { ...p, generationRuns: (p.generationRuns ?? []).map(x => (x.id === run.id ? { ...x, status: 'discarded' } : x)) };
     return logHistory(p, { actor: 'user', action: 'discard-run', summary: `Discarded generation “${run.state?.premise?.title ?? run.id}”` });
 }

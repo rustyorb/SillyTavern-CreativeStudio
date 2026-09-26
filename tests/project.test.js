@@ -194,3 +194,25 @@ test('isUntouchedBlank: made with New character / New scenario and never edited'
     assert.equal(isUntouchedBlank({ ...newCharacter('New character'), avatarMediaId: 'm1' }), false);
     assert.equal(isUntouchedBlank(null), false);
 });
+
+test('isUntouchedBlank: an extra field, a pending proposal or a run pointing at it means there is work in it', () => {
+    assert.equal(isUntouchedBlank({ ...newCharacter('New character'), appearance: 'silver hair' }), false, 'an AI-written appearance is work');
+    const blank = newCharacter('New character');
+    const p = upsertArtifact(createProject('b'), 'characters', blank, { action: 'create', summary: 'New character' });
+    assert.equal(isUntouchedBlank(blank, p), true, 'its own history entry does not count');
+    const prop = createProposal(p, { task: 'character.rewrite-field', target: { type: 'characters', id: blank.id, path: 'card.data.description' }, after: 'x' });
+    assert.equal(isUntouchedBlank(blank, addProposals(p, [prop])), false, 'a proposal is waiting for it');
+    assert.equal(isUntouchedBlank(blank, { ...p, generationRuns: [{ id: 'r', status: 'running', state: { characterId: blank.id } }] }), false, 'a run is building it');
+});
+
+test('removeMedia also drops the card asset entry that pointed at a removed CHARX file', () => {
+    let p = upsertArtifact(createProject('x'), 'media', { id: 'icon', name: 'assets/icon/images/main.png' });
+    const c = newCharacter('Cx', null, { assetFiles: { 'assets/icon/images/main.png': 'icon', 'assets/other/x.bin': 'other' } });
+    c.card.data.assets = [
+        { type: 'icon', uri: 'embeded://assets/icon/images/main.png', name: 'main', ext: 'png' },
+        { type: 'other', uri: 'embeded://assets/other/x.bin', name: 'x', ext: 'bin' },
+        { type: 'icon', uri: 'ccdefault:', name: 'alt', ext: 'png' },
+    ];
+    p = removeMedia(upsertArtifact(p, 'characters', c), 'icon');
+    assert.deepEqual(p.characters[0].card.data.assets.map(a => a.uri), ['embeded://assets/other/x.bin', 'ccdefault:']);
+});

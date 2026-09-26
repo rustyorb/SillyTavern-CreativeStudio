@@ -9,7 +9,7 @@ import { isHandsFree } from './proposals.js';
 import { AiSetup } from './providers-panel.js';
 import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt, openPullPicker } from './st-pull.js';
 import { PromptSettings, ContentPill } from './prompt-settings.js';
-import { CARD_FILES, importAnyFile, openCardImport } from './importer.js';
+import { CARD_FILES, importAnyFile, openCardImport, dragDecision } from './importer.js';
 
 /** A new project starts with the creation model chosen last time (if that profile still exists). */
 function withDefaultCreationModel(project) {
@@ -110,7 +110,10 @@ function Studio({ store, env, initialRoute, onClose }) {
 
     // Cards come in from Import card… (buttons, menus, Ctrl+K) or by dropping files on the studio; the new character opens.
     const openCharacter = c => { setArea('characters'); setSelection({ type: 'characters', id: c.id }); };
-    const blankInView = () => (selection?.type === 'characters' && isUntouchedBlank(findArtifact(store.get(), 'characters', selection.id)) ? selection.id : undefined);
+    const blankInView = () => {
+        const p = store.get();
+        return selection?.type === 'characters' && isUntouchedBlank(findArtifact(p, 'characters', selection.id), p) ? selection.id : undefined;
+    };
     useEffect(() => {
         const onImport = async e => {
             const file = await pickFile(CARD_FILES);
@@ -122,21 +125,24 @@ function Studio({ store, env, initialRoute, onClose }) {
         return () => globalThis.removeEventListener('cs-import-card', onImport);
     }, []);
     const [dropping, setDropping] = useState(false);
-    const carriesFiles = e => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const decide = e => dragDecision({
+        files: Array.from(e.dataTransfer?.types ?? []).includes('Files'),
+        editable: !!e.target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])'),
+    });
     const onDragOver = e => {
-        if (!carriesFiles(e)) return;
-        e.preventDefault();
-        // SillyTavern imports anything dropped on its page into its own character list; a drop here is the studio's.
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'copy';
-        if (!dropping) setDropping(true);
+        const d = decide(e);
+        if (d.stop) e.stopPropagation();
+        if (d.prevent) e.preventDefault();
+        if (e.dataTransfer && d.prevent) e.dataTransfer.dropEffect = d.accept ? 'copy' : 'none';
+        if (d.accept && !dropping) setDropping(true);
     };
     const onDragLeave = e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); };
     const onDrop = async e => {
-        if (!carriesFiles(e)) return;
-        e.preventDefault();
-        e.stopPropagation();
+        const d = decide(e);
+        if (d.stop) e.stopPropagation();
+        if (d.prevent) e.preventDefault();
         setDropping(false);
+        if (!d.accept) return;
         let replaceId = blankInView();
         let last = null;
         for (const file of Array.from(e.dataTransfer.files)) {

@@ -32,7 +32,8 @@ import { MediaView } from './media.js';
 
 export function CharactersArea(props) {
     const { project, selection } = props;
-    if (selection?.type === 'media') return html`<${MediaView} ...${props} key=${selection.id} />`;
+    // A picture that is no longer in this project (removed, or another project opened) leaves the Characters page.
+    if (selection?.type === 'media' && findArtifact(project, 'media', selection.id)) return html`<${MediaView} ...${props} key=${selection.id} />`;
     const ch = selection?.type === 'characters' ? findArtifact(project, 'characters', selection.id) : null;
     if (ch) return html`<${CharacterEditor} ...${props} ch=${ch} key=${ch.id} />`;
     return html`<${CharacterHome} ...${props} />`;
@@ -201,7 +202,7 @@ function CharacterEditor(props) {
         </div>
         <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
         <div class="cs-area-body">
-            ${isUntouchedBlank(ch) && html`<div class="cs-blank-hint" role="note">
+            ${isUntouchedBlank(ch, project) && html`<div class="cs-blank-hint" role="note">
                 <${Icon} name="file-import" />
                 <span>This ${ch.kind === 'scenario' ? 'scenario' : 'character'} is empty. Have a card already? Import it in place of this one, or fill in the fields below.</span>
                 <${Button} small kind="primary" icon="file-import" label="Import card…" onClick=${() => openCardImport({ replaceId: ch.id })} />

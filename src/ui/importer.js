@@ -12,6 +12,16 @@ import { unzipSync, strFromU8 } from '../../vendor/fflate.mjs';
 export const CARD_FILES = '.png,.json,.charx';
 
 /**
+ * What the studio does with a drag over it. It always keeps the drag from SillyTavern, whose page-wide handler imports
+ * whatever is dropped there (files and links) into its own character list. Files are the studio's to import; text
+ * dragged into a field is left to the browser; anything else is swallowed, so the page never navigates away.
+ * @returns {{ stop: boolean, prevent: boolean, accept: boolean }} stopPropagation, preventDefault, import + overlay
+ */
+export function dragDecision({ files, editable }) {
+    return { stop: true, prevent: files || !editable, accept: files };
+}
+
+/**
  * Ask the studio to pick a card file and import it. The app listens and opens the file dialog while the click is
  * still being handled, so browsers allow it.
  * @param {{ replaceId?: string }} [detail] an untouched blank character the import takes the place of
@@ -60,8 +70,8 @@ export async function importCard(store, env, bytes, fileName, { replaceId } = {}
         let next = adds.reduce((acc, apply) => apply(acc), p);
         next = upsertArtifact(next, 'characters', art, { action: 'create', actor: 'import', summary: `Imported ${fileName} (${imported.format})` });
         const blank = replaceId ? findArtifact(next, 'characters', replaceId) : null;
-        return blank && isUntouchedBlank(blank) ? removeArtifact(next, 'characters', replaceId) : next;
-    }, 'import card');
+        return blank && isUntouchedBlank(blank, next) ? removeArtifact(next, 'characters', replaceId) : next;
+    }, `import ${art.card.data.name || fileName}`, { merge: false });
     env.toast(`Imported ${art.card.data.name || fileName}. Ctrl+Z takes it back out.`, 'ok', 5000);
     return art;
 }
@@ -96,8 +106,15 @@ export async function openProjectBytes(store, env, bytes, fileName) {
  * @returns {Promise<{ kind: string, character?: object|null }>}
  */
 export async function importAnyFile(store, env, file, { replaceId } = {}) {
-    const bytes = await fileBytes(file);
-    const kind = detectImportKind(bytes, file.name);
+    let bytes;
+    let kind;
+    try {
+        bytes = await fileBytes(file);
+        kind = detectImportKind(bytes, file.name);
+    } catch (e) {
+        env.toast(`Couldn't open ${file.name}: ${e.message}`, 'error', 8000);
+        return { kind: 'error' };
+    }
     if (kind === 'card') return { kind, character: await importCard(store, env, bytes, file.name, { replaceId }) };
     if (kind === 'project') {
         await openProjectBytes(store, env, bytes, file.name);

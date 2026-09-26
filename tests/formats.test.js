@@ -192,3 +192,11 @@ test('detectImportKind tells character cards from studio projects and plain pict
     assert.equal(detectImportKind(zipSync({ 'readme.txt': enc('x') }), 'other.zip'), 'unknown');
     assert.equal(detectImportKind(enc('name: C'), 'c.yaml'), 'card', 'YAML goes to the card importer, which explains how to bring it in');
 });
+
+test('detectImportKind: a damaged PNG goes to the card importer (which explains), a lorebook is not a card, a spec-less card is', async () => {
+    const { detectImportKind } = await import('../src/core/bundle.js');
+    const enc = o => new TextEncoder().encode(JSON.stringify(o));
+    assert.equal(detectImportKind(fixture('seraphina.png').slice(0, 200), 'half.png'), 'card', 'no exception on a truncated PNG');
+    assert.equal(detectImportKind(enc({ name: 'Eldoria', description: 'A world', entries: { 0: { key: ['x'] } } }), 'world.json'), 'unknown');
+    assert.equal(detectImportKind(enc({ data: { name: 'Nia', description: 'd' } }), 'nia.json'), 'card');
+});

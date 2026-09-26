@@ -27,9 +27,10 @@ export function createStore(initial, { sticky = [] } = {}) {
         },
         /**
          * Replace the state with the result of `fn(state)`.
-         * Consecutive edits with the same label within 1.5s coalesce into one undo step (typing).
+         * Consecutive edits with the same label within 1.5s coalesce into one undo step (typing), unless `merge` is false
+         * (one action, one step: an import stays its own step however fast the next one follows).
          */
-        update(fn, label = 'edit', { history = true } = {}) {
+        update(fn, label = 'edit', { history = true, merge = true } = {}) {
             const prev = state;
             const next = fn(state);
             if (next === prev) return;
@@ -40,7 +41,7 @@ export function createStore(initial, { sticky = [] } = {}) {
                 return;
             }
             const t = Date.now();
-            const coalesce = label === lastLabel && t - lastTime < 1500 && undo.length;
+            const coalesce = merge && label === lastLabel && t - lastTime < 1500 && undo.length;
             if (!coalesce) {
                 undo.push({ state: prev, label });
                 if (undo.length > MAX_UNDO) undo.shift();

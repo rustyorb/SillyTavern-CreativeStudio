@@ -4,6 +4,7 @@
 import { utf8Encode, utf8Decode, clone } from './bytes.js';
 import { exportCard } from './cardio.js';
 import { isPng, readCardChunks } from './png.js';
+import { detectCardVersion } from './card.js';
 import { unzipSync } from '../../vendor/fflate.mjs';
 import { artifactName, dependencyReport, cardForSt, PROJECT_SCHEMA } from './project.js';
 import { KINDS, stripSensitive } from './preset.js';
@@ -159,17 +160,22 @@ export function isStudioProjectFile(json) {
 const isJpeg = b => b[0] === 0xff && b[1] === 0xd8;
 const isGif = b => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46;
 const isWebp = b => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
-const CARD_FIELDS_V1 = ['description', 'first_mes', 'personality', 'scenario', 'mes_example'];
-const looksLikeCard = j => !!j && typeof j === 'object'
-    && (/^chara_card_v[23]$/.test(j.spec ?? '') || (typeof j.name === 'string' && CARD_FIELDS_V1.some(k => k in j)));
+// The card importer's own test for a card; a World Info file (name, description, entries) is not one.
+const looksLikeCard = j => !!j && typeof j === 'object' && !('entries' in j) && detectCardVersion(j) !== 'unknown';
 
 /**
  * What a dropped or opened file is, without parsing it in full: a character card ('card'), a Creative Studio
  * project or bundle ('project'), a picture with no card data in it ('image'), or anything else ('unknown').
- * YAML counts as a card so the card importer can explain how to bring it in.
+ * YAML and damaged PNGs count as cards, so the card importer can say what is wrong with them.
  */
 export function detectImportKind(bytes, fileName = '') {
-    if (isPng(bytes)) return readCardChunks(bytes).winner ? 'card' : 'image';
+    if (isPng(bytes)) {
+        try {
+            return readCardChunks(bytes).winner ? 'card' : 'image';
+        } catch {
+            return 'card';
+        }
+    }
     if (isJpeg(bytes) || isGif(bytes) || isWebp(bytes)) return 'image';
     if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
         let names;

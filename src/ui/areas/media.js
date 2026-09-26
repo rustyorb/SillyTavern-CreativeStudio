@@ -1,5 +1,5 @@
 // One picture of the project: what it is, which characters show it, and removing it from every place at once.
-import { html, Button, Icon, Section, Empty } from '../kit.js';
+import { html, Button, Icon, Section } from '../kit.js';
 import { findArtifact, mediaUsage, unusedMedia, removeMedia } from '../../core/project.js';
 
 const HOW = { avatar: 'avatar', gallery: 'gallery picture' };
@@ -22,8 +22,7 @@ export async function removeUnusedPictures(store, env) {
 }
 
 export function MediaView({ store, env, project, selection, setSelection, select }) {
-    const m = findArtifact(project, 'media', selection.id);
-    if (!m) return html`<div class="cs-area-body"><${Empty} icon="image" title="This picture was removed">Ctrl+Z brings it back.</${Empty}></div>`;
+    const m = findArtifact(project, 'media', selection.id); // the Characters area only shows this view while it exists
     const uses = mediaUsage(project, m.id);
     const others = unusedMedia(project).filter(x => x.id !== m.id);
     const remove = async () => {
@@ -59,7 +58,7 @@ export function MediaView({ store, env, project, selection, setSelection, select
                     </dl>
                     ${!uses.length && others.length > 0 && html`<div class="cs-row">
                         <span class="cs-muted">${others.length} other picture${others.length === 1 ? '' : 's'} in this project ${others.length === 1 ? 'is' : 'are'} unused too.</span>
-                        <${Button} small icon="broom" label=${`Remove all ${others.length + 1} unused`} onClick=${() => removeUnusedPictures(store, env).then(() => { if (!findArtifact(store.get(), 'media', m.id)) setSelection(null); })} />
+                        <${Button} small icon="broom" label=${`Remove all ${others.length + 1} unused`} onClick=${() => removeUnusedPictures(store, env)} />
                     </div>`}
                 </div>
             </div>

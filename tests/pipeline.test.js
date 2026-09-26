@@ -270,3 +270,15 @@ test('review fixes: no automatic retry after a timeout on the main connection (S
     assert.equal(run.steps.lore.status, 'failed');
     assert.equal(h.calls.filter(c => c.task === 'lore.structure').length, 1);
 });
+
+test('review fixes: discarding a run that painted a kept character\'s portrait leaves no pointer to it', async () => {
+    const { newCharacter, upsertArtifact } = await import('../src/core/project.js');
+    const c = newCharacter('Kept', null, { avatarMediaId: 'med_p' });
+    c.links.media = ['med_p'];
+    let p = upsertArtifact(upsertArtifact(createProject('d'), 'media', { id: 'med_p', name: 'Kept — avatar' }), 'characters', c);
+    p = { ...p, generationRuns: [{ id: 'r1', status: 'done' }] };
+    const after = discardRun(p, { id: 'r1', state: { created: [{ type: 'media', id: 'med_p' }] } });
+    assert.equal(after.media.length, 0);
+    assert.equal(after.characters[0].avatarMediaId, '', 'the kept character no longer points at the discarded portrait');
+    assert.deepEqual(after.characters[0].links.media, []);
+});

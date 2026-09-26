@@ -17,3 +17,11 @@ test('bookkeeping updates are not undo steps, and sticky keys survive undo/redo'
     assert.equal(s.get().text, 'b');
     assert.equal(s.get().generationRuns[0].status, 'done');
 });
+
+test('updates asked not to merge stay separate undo steps, even with the same label', () => {
+    const s = createStore({ n: 0 });
+    s.update(p => ({ n: p.n + 1 }), 'import card', { merge: false });
+    s.update(p => ({ n: p.n + 1 }), 'import card', { merge: false });
+    s.undo();
+    assert.equal(s.get().n, 1);
+});
