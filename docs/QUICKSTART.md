@@ -28,9 +28,11 @@ The top bar tells you whether AI edits apply directly or wait for review. You ca
 
 ## Add a portrait and world details
 
-In the character’s **Pictures** tab, choose **Upload portrait**. You can replace it later; previous pictures stay in the gallery. The portrait travels with the exported card. If an image generator is configured, you can also write prompts and paint images here.
+Open a character, then **Pictures**. Both the character tab and the main Pictures button stay with that character. Choose a picture type, write a **Picture prompt**, then press **Generate picture**. **Help write prompt** can draft the words from the character card; you can edit them before generating. Each character keeps its own prompt draft. **Image settings** opens the generator setup directly.
 
-The main **Pictures** page collects all project pictures. Search by picture or character name, filter expressions or unused pictures, and open a picture to see its uses or remove it. Removal is undoable.
+To use an existing picture, choose **Upload portrait…**. Replacing it keeps previous pictures in the character’s gallery. The portrait travels with the exported card. Expand **Expression sprites** to generate moods through ComfyUI.
+
+**Pictures → Project picture library** collects all project pictures. Search by picture or character name, filter expressions or unused pictures, and open a picture to see its uses or remove it. Removal is undoable. Returning to Pictures keeps your working character selected.
 
 **World** holds lorebooks. Each entry needs a title, trigger words and facts to recall. Link a book from the character’s World tab. Advanced matching, placement and activation settings are available in expandable sections.
 

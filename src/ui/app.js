@@ -51,7 +51,7 @@ export async function mountStudio(root, { route, onClose }) {
     }
     if (!store) {
         const last = await studioEnv.storage.loadLastProject().catch(() => null);
-        store = createStore(last ?? withDefaultCreationModel(createProject('My first project')), { sticky: ['generationRuns'] });
+        store = createStore(last ?? withDefaultCreationModel(createProject('My first project')), { sticky: ['generationRuns', 'workspace'] });
         studioEnv.attachStore(store);
     }
     render(html`<${Studio} store=${store} env=${studioEnv} initialRoute=${route} onClose=${onClose} />`, root);
@@ -76,7 +76,14 @@ export const AREAS = [
 function Studio({ store, env, initialRoute, onClose }) {
     const project = useStore(store);
     const [area, setArea] = useState(AREAS.some(a => a.id === initialRoute) ? initialRoute : 'project');
-    const [selection, setSelection] = useState(null); // { type, id }
+    const [selection, setSelectionState] = useState(null); // { type, id }
+    const setSelection = useCallback(next => {
+        setSelectionState(next);
+        if (next?.type !== 'characters') return;
+        store.update(p => !findArtifact(p, 'characters', next.id) || p.workspace?.characterId === next.id ? p : {
+            ...p, workspace: { ...p.workspace, characterId: next.id },
+        }, 'working character', { history: false });
+    }, [store]);
     const [inspector, setInspector] = useState('proposals');
     // 'auto' = open only while proposals are pending (an empty rail wastes a quarter of the screen).
     const [inspectorMode, setInspectorMode] = useState('auto');
