@@ -6,7 +6,8 @@ import {
 } from '../kit.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
 import { isHandsFree } from '../proposals.js';
-import { findArtifact, editArtifactField, upsertArtifact, removeArtifact, logHistory } from '../../core/project.js';
+import { findArtifact, editArtifactField, upsertArtifact, logHistory } from '../../core/project.js';
+import { DeleteButton, DeleteArtifactButton, deleteWithUndo } from '../deletion.js';
 import { newSet, addQr, importQrJson, lintSet, QR_FLAGS } from '../../core/qr.js';
 import { analyze, isSideEffectFree, EFFECT } from '../../core/stscript.js';
 import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
@@ -56,6 +57,7 @@ export function ScriptsArea(props) {
             ${project.qrSets.length > 1 && html`<select class="text_pole" style="width:auto" value=${set?.id} onChange=${e => select('qrSets', e.currentTarget.value)} aria-label="Quick Reply set">
                 ${project.qrSets.map(s => html`<option value=${s.id} selected=${s.id === set?.id}>${s.name}</option>`)}</select>`}
             <div class="cs-spacer"></div>
+            ${set && html`<${DeleteArtifactButton} store=${store} env=${env} type="qrSets" item=${set} label="Delete set" onDeleted=${() => setSelection(null)} onRestored=${() => select('qrSets', set.id)} />`}
             <${Button} icon="plus" label="New set" onClick=${() => addSet(newQrSetArtifact('New set'), 'New QR set')} />
             <${Button} icon="file-import" label="Import…" title="QR set (v1 or v2) or a single .qr.json" onClick=${importFile} />
             <${Button} icon="plug" label="From SillyTavern…" onClick=${() => setStPicker(true)} />
@@ -106,11 +108,6 @@ function SetEditor({ store, env, project, set, select, setSelection }) {
         [list[i], list[j]] = [list[j], list[i]];
         setData({ ...d, qrList: list }, 'Reordered Quick Replies');
     };
-    const remove = async () => {
-        if (!(await env.confirm(`Remove set ${d.name} from the project?`, 'Nothing in SillyTavern is deleted.'))) return;
-        store.update(p => removeArtifact(p, 'qrSets', set.id, { summary: `Removed QR set ${d.name}` }), 'remove QR set');
-        setSelection(null);
-    };
     return html`
         <${Section} title="Set">
             <div class="cs-grid">
@@ -123,20 +120,20 @@ function SetEditor({ store, env, project, set, select, setSelection }) {
                 <span class="cs-muted cs-small">Intended links:</span>
                 <${Toggle} label="Global" checked=${set.links?.global ?? true} onChange=${v => setMeta('links.global', v, 'QR link')} />
                 ${project.characters.map(c => html`<${Toggle} key=${c.id} label=${c.card.data.name} checked=${(set.links?.characters ?? []).includes(c.id)} onChange=${v => setMeta('links.characters', v ? [...(set.links?.characters ?? []), c.id] : (set.links?.characters ?? []).filter(x => x !== c.id), 'QR link')} />`)}
-                <div class="cs-spacer" style="flex:1"></div>
-                <${Button} small icon="trash" kind="danger" label="Remove set" onClick=${remove} />
             </div>
         </${Section}>
         <div class="cs-split-3" style="grid-template-columns:minmax(220px,300px) minmax(0,1fr)">
             <div class="cs-stack">
                 <${Button} small icon="plus" label="Quick Reply" onClick=${add} />
-                <ul class="cs-list">${d.qrList.map((q, i) => html`<li key=${q.id} class=${cx('cs-list-item', qr?.id === q.id && 'active')} onClick=${() => setQrId(q.id)}>
+                <ul class="cs-list" aria-label="Quick Reply buttons">${d.qrList.map((q, i) => html`<li key=${q.id} class=${cx('cs-list-item cs-removable-row', qr?.id === q.id && 'active')}>
+                    <button class="cs-item-open" onClick=${() => setQrId(q.id)}>
                     ${q.icon ? html`<i class=${q.icon}></i>` : html`<${Icon} name=${q.isHidden ? 'eye-slash' : 'square'} />`}
-                    <span class="cs-grow">${q.label || '(no label)'}</span>
+                    <span>${q.label || '(no label)'}</span></button>
                     ${QR_FLAGS.some(([k]) => q[k]) && html`<${Icon} name="bolt" title="Auto-executes" />`}
                     ${q.automationId && html`<${Icon} name="book" title=${`Automation ID ${q.automationId}`} />`}
                     ${lint.some(l => l.qrId === q.id && l.level !== 'info') && html`<${Icon} name="triangle-exclamation" />`}
                     <span class="cs-row" style="gap:0"><button class="cs-btn cs-btn-sm" aria-label="Move up" onClick=${e => { e.stopPropagation(); move(i, -1); }}>↑</button><button class="cs-btn cs-btn-sm" aria-label="Move down" onClick=${e => { e.stopPropagation(); move(i, 1); }}>↓</button></span>
+                    <${DeleteQrButton} store=${store} env=${env} set=${set} qr=${q} setQrId=${setQrId} />
                 </li>`)}</ul>
                 ${!d.qrList.length && html`<div class="cs-muted cs-small">No buttons yet.</div>`}
             </div>
@@ -147,6 +144,18 @@ function SetEditor({ store, env, project, set, select, setSelection }) {
                 ${tab === 'publish' && html`<${QrPublish} store=${store} env=${env} set=${set} />`}
             </div>
         </div>`;
+}
+
+function DeleteQrButton({ store, env, set, qr, setQrId, label = 'Delete' }) {
+    return html`<${DeleteButton} name=${qr.label || 'Untitled Quick Reply'} label=${label}
+        detail=${`Only this button is removed from “${set.data.name}”. The rest of the set stays.`} onDelete=${() => {
+            const removed = deleteWithUndo(store, env, p => {
+                const current = findArtifact(p, 'qrSets', set.id);
+                if (!current?.data.qrList.some(q => q.id === qr.id)) return p;
+                return editArtifactField(p, 'qrSets', set.id, 'data.qrList', current.data.qrList.filter(q => q.id !== qr.id), { summary: `Deleted Quick Reply ${qr.label}` });
+            }, `Deleted button ${qr.label || 'Untitled Quick Reply'}`, () => setQrId(qr.id));
+            if (removed) setQrId(id => id === qr.id ? null : id);
+        }} />`;
 }
 
 function QrEditor({ store, env, project, set, qr, setData, setQrId }) {
@@ -166,10 +175,6 @@ function QrEditor({ store, env, project, set, qr, setData, setQrId }) {
         ...analysis.lints.map(l => ({ level: l.level, path: l.line ? `line ${l.line}` : '', message: l.message })),
         ...argLint.map(l => ({ level: l.level, path: `line ${l.line}`, message: l.message })),
     ];
-    const deleteQr = () => {
-        setData({ ...d, qrList: d.qrList.filter(q => q.id !== qr.id) }, `Deleted Quick Reply ${qr.label}`);
-        setQrId(d.qrList.find(q => q.id !== qr.id)?.id ?? null);
-    };
     const exportQr = () => downloadBlob(utf8Encode(JSON.stringify(qr, null, 4)), `${qr.label || 'qr'}.qr.json`, 'application/json');
     return html`<div class="cs-stack">
         <div class="cs-grid">
@@ -183,7 +188,7 @@ function QrEditor({ store, env, project, set, qr, setData, setQrId }) {
             ${live.available && html`<${Badge} kind=${live.ok ? 'ok' : 'err'} title="Checked with SillyTavern's own parser">${live.ok ? 'parses in ST' : 'syntax error'}</${Badge}>`}
             <${Button} small icon="play" label="Test run…" onClick=${() => setRunState({ phase: 'review' })} disabled=${!qr.message.trim()} />
             <${Button} small icon="download" title="Export this Quick Reply" onClick=${exportQr} />
-            <${Button} small icon="trash" kind="danger" title="Delete" onClick=${deleteQr} />
+            <${DeleteQrButton} store=${store} env=${env} set=${set} qr=${qr} setQrId=${setQrId} label="Delete button" />
         </div>
         ${view === 'source'
             ? html`<textarea class="text_pole cs-textarea cs-code" rows="14" value=${qr.message} onInput=${e => setQr({ message: e.currentTarget.value })} aria-label="Quick Reply message / STscript" spellcheck="false"></textarea>`

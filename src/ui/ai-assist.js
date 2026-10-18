@@ -71,8 +71,7 @@ export function useAiAssist({ store, project, label, value, target, current, rew
     };
     const primary = () => (empty ? rewrite(1) : add());
 
-    const actions = html`${empty && html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Write it" title=${`AI writes the ${name} from its context`} onClick=${() => rewrite(1, '')} disabled=${ai.busy} />`}
-        <${Button} small kind=${empty ? '' : 'ai'} icon="wand-magic-sparkles" label="AI" title=${`Tell the AI what to ${empty ? 'write' : 'add or change'} in the ${name}`} onClick=${() => setOpen(!open)} ariaPressed=${open} />`;
+    const actions = html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Ask AI" title=${`Tell the AI what to ${empty ? 'write' : 'add or change'} in the ${name}`} onClick=${() => setOpen(!open)} ariaPressed=${open} />`;
 
     const panel = open && html`<div class="cs-ai-box">
         <input class="text_pole" placeholder=${empty ? (emptyHint ?? `What should the ${name} say? (optional: the AI works from its context)`) : 'What should the AI do? e.g. "add a fear of deep water", "make the voice drier", "mention the scar"'} value=${instruction}

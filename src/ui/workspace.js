@@ -3,7 +3,7 @@ import { html, useState, useEffect, useRef, Icon, Button, Badge, cx } from './ki
 import { artifactName, upsertArtifact, newCharacter, unusedMedia } from '../core/project.js';
 import { openCardImport } from './importer.js';
 import { openPullPicker } from './st-pull.js';
-import { removeUnusedPictures } from './areas/media.js';
+import { removeUnusedPictures, PicturesArea } from './areas/media.js';
 import { ProjectArea } from './areas/project.js';
 import { CharactersArea } from './areas/characters.js';
 import { LoreArea } from './areas/lore.js';
@@ -16,6 +16,7 @@ import { newLorebookArtifact } from './areas/lore.js';
 import { newPresetArtifact } from './areas/prompts.js';
 import { newRegexArtifact } from './areas/regex.js';
 import { newQrSetArtifact } from './areas/scripts.js';
+import { DeleteArtifactButton } from './deletion.js';
 
 const TREE = [
     {
@@ -33,7 +34,7 @@ const TREE = [
     { type: 'connectionProfiles', label: 'Connection profiles', icon: 'plug', area: 'prompts' },
     { type: 'regexScripts', label: 'Regex scripts', icon: 'code', area: 'regex', create: () => newRegexArtifact('New regex') },
     { type: 'qrSets', label: 'Quick Reply sets', icon: 'terminal', area: 'scripts', create: () => newQrSetArtifact('New set') },
-    { type: 'media', label: 'Media', icon: 'image', area: 'characters' },
+    { type: 'media', label: 'Pictures', icon: 'image', area: 'media' },
 ];
 
 export const AREA_FOR_TYPE = Object.fromEntries(TREE.map(t => [t.type, t.area]));
@@ -42,10 +43,12 @@ export function Workspace(props) {
     const { store, env, project, area, setArea, selection, setSelection, inspectorOpen } = props;
     const [collapsed, setCollapsed] = useState({});
     const [filter, setFilter] = useState('');
+    const [allGroups, setAllGroups] = useState(false);
 
-    const select = (type, id) => {
-        setSelection({ type, id });
+    const select = (type, id, tab) => {
+        setSelection({ type, id, tab });
         setArea(AREA_FOR_TYPE[type] ?? area);
+        props.closeLibrary?.();
     };
 
     const create = (type, make) => {
@@ -58,8 +61,9 @@ export function Workspace(props) {
     const areaProps = { ...props, select };
     const q = filter.trim().toLowerCase();
 
-    return html`<div class=${cx('cs-workspace', !inspectorOpen && 'cs-no-inspector')}>
+    return html`<div class=${cx('cs-workspace', !inspectorOpen && 'cs-no-inspector', props.libraryOpen && 'cs-library-open')}>
         <aside class="cs-tree" aria-label="Project tree">
+            <div class="cs-library-heading"><strong>In this project</strong><${Button} small icon="xmark" title="Close project items" onClick=${props.closeLibrary} /></div>
             <div class="cs-tree-search">
                 <${Icon} name="magnifying-glass" />
                 <input class="text_pole" placeholder="Filter project…" value=${filter} onInput=${e => setFilter(e.currentTarget.value)} aria-label="Filter project tree" />
@@ -67,7 +71,7 @@ export function Workspace(props) {
             <button class=${cx('cs-tree-root', area === 'project' && !selection && 'active')} onClick=${() => { setSelection(null); setArea('project'); }}>
                 <${Icon} name="diagram-project" /> <span>${project.name}</span>
             </button>
-            ${TREE.map(t => {
+            ${TREE.filter(t => allGroups || q || project[t.type].length || t.type === 'characters' || t.area === area).map(t => {
                 const rows = treeRows(t, project, q);
                 const isCollapsed = collapsed[t.type];
                 return html`<div class="cs-tree-group" key=${t.type}>
@@ -80,17 +84,21 @@ export function Workspace(props) {
                         ${t.type === 'media' && unusedCount > 0 && html`<${Button} small icon="broom" title=${`Remove ${unusedCount} unused picture${unusedCount === 1 ? '' : 's'}`} onClick=${() => removeUnusedPictures(store, env)} />`}
                     </div>
                     ${!isCollapsed && html`<ul class="cs-tree-items">
-                        ${rows.map(r => html`<li key=${r.key}>
-                            <button class=${cx('cs-tree-item', !r.folded && selection?.id === r.id && 'active')} onClick=${() => select(r.type, r.id)} title=${r.label}>
+                        ${rows.map(r => html`<li key=${r.key} class="cs-tree-row">
+                            <button class=${cx('cs-tree-item', !r.folded && selection?.id === r.id && 'active')} onClick=${() => select(r.type, r.id, r.folded ? 'images' : undefined)} title=${r.label}>
                                 ${r.badge}<span>${r.label}</span>
                             </button>
+                            ${['presets', 'connectionProfiles', 'regexScripts', 'qrSets'].includes(r.type) && html`<${DeleteArtifactButton}
+                                store=${store} env=${env} type=${r.type} item=${project[r.type].find(a => a.id === r.id)}
+                                onDeleted=${() => selection?.id === r.id && setSelection(null)} onRestored=${() => select(r.type, r.id)} />`}
                         </li>`)}
                         ${!rows.length && html`<li class="cs-tree-empty">${q ? 'No match' : 'None yet'}</li>`}
                     </ul>`}
                 </div>`;
             })}
+            <button class="cs-tree-more" aria-expanded=${allGroups} onClick=${() => setAllGroups(!allGroups)}>${allGroups ? 'Hide empty categories' : 'Show all categories'}</button>
         </aside>
-        <main class="cs-main">
+        <main class="cs-main" key=${`${project.id}:${area}`}>
             ${area === 'project' && html`<${ProjectArea} ...${areaProps} />`}
             ${area === 'characters' && html`<${CharactersArea} ...${areaProps} />`}
             ${area === 'lore' && html`<${LoreArea} ...${areaProps} />`}
@@ -98,6 +106,7 @@ export function Workspace(props) {
             ${area === 'regex' && html`<${RegexArea} ...${areaProps} />`}
             ${area === 'scripts' && html`<${ScriptsArea} ...${areaProps} />`}
             ${area === 'playtest' && html`<${PlaytestArea} ...${areaProps} />`}
+            ${area === 'media' && html`<${PicturesArea} ...${areaProps} />`}
         </main>
         ${inspectorOpen ? html`<${Inspector} ...${areaProps} />` : html`<nav class="cs-rail" aria-label="Inspector">
             <button class="cs-rail-btn" title="AI proposals" onClick=${() => props.openInspectorAt('proposals')}><${Icon} name="wand-magic-sparkles" />${props.pending > 0 && html`<${Badge} kind="accent">${props.pending}</${Badge}>`}</button>

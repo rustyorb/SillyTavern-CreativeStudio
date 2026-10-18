@@ -1,6 +1,6 @@
 // Project assembly: overview, health, relationships/dependencies, publish bundle, deliberate apply-to-SillyTavern plan.
 import { html, useState, useMemo, useEffect, Button, Icon, Badge, TextInput, TextArea, Section, Empty, Diagnostics, Modal, Toggle, Select, downloadBlob, pickFile, cx } from '../kit.js';
-import { dependencyReport, artifactName, findArtifact, logHistory, createProject, cardForSt, stWorldName } from '../../core/project.js';
+import { dependencyReport, artifactName, findArtifact, logHistory, createProject, cardForSt, stWorldName, newCharacter, upsertArtifact } from '../../core/project.js';
 import { validateCardV3 } from '../../core/card.js';
 import { lintWorld } from '../../core/lorebook.js';
 import { lintCc } from '../../core/preset.js';
@@ -16,16 +16,28 @@ import { recordBackup } from '../inspector.js';
 import { KINDS, stripSensitive } from '../../core/preset.js';
 import { clone } from '../../core/bytes.js';
 import { Generator } from '../generator.js';
-import { CARD_FILES, importAnyFile } from '../importer.js';
+import { CARD_FILES, importAnyFile, openCardImport } from '../importer.js';
+import { openPullPicker } from '../st-pull.js';
+import { CharacterLibrary } from '../character-library.js';
 const AREA_FOR_TYPE = { characters: 'characters', lorebooks: 'lore', presets: 'prompts', regexScripts: 'regex', qrSets: 'scripts', media: 'characters' };
 
 export function ProjectArea({ store, env, project, select, setArea }) {
     const [publishOpen, setPublishOpen] = useState(false);
     const [applyOpen, setApplyOpen] = useState(false);
+    const [generating, setGenerating] = useState(() => !!project.generationDraft || (project.generationRuns ?? []).some(r => r.status === 'running'));
+    const [query, setQuery] = useState('');
     const set = (k, v, label) => store.update(p => logHistory({ ...p, [k]: v, modified: new Date().toISOString() }, { action: 'edit', path: k, summary: label }), `edit ${k}`);
     const health = useMemo(() => projectHealth(project), [project]);
     const deps = useMemo(() => dependencyReport(project), [project]);
-    const counts = [['characters', 'user'], ['lorebooks', 'book'], ['presets', 'sliders'], ['regexScripts', 'code'], ['qrSets', 'terminal'], ['media', 'image'], ['playtests', 'flask']];
+    const newBlank = () => {
+        const c = newCharacter('New character');
+        store.update(p => upsertArtifact(p, 'characters', c, { action: 'create', summary: 'Created a character' }), 'create character');
+        select('characters', c.id);
+    };
+    const activeRuns = (project.generationRuns ?? []).filter(r => r.status !== 'discarded');
+    const showGenerator = generating;
+    const hasItems = ['characters', 'lorebooks', 'presets', 'regexScripts', 'qrSets'].some(k => project[k].length);
+    const characters = project.characters.filter(c => `${c.card.data.name} ${(c.card.data.tags ?? []).join(' ')}`.toLowerCase().includes(query.toLowerCase()));
     // A project or bundle opens; a character card is imported into this project and opened.
     const openFile = async () => {
         const f = await pickFile(`.zip,${CARD_FILES}`);
@@ -33,28 +45,39 @@ export function ProjectArea({ store, env, project, select, setArea }) {
         const r = await importAnyFile(store, env, f);
         if (r.character) select('characters', r.character.id);
     };
-    return html`<div class="cs-area-head">
-            <h3><${Icon} name="diagram-project" /></h3>
-            <input class="text_pole" style="max-width:360px;font-weight:600" value=${project.name} aria-label="Project name" onInput=${e => set('name', e.currentTarget.value, 'Renamed project')} />
-            <div class="cs-spacer"></div>
-            <${Button} icon="file-import" label="Open file…" title="A Creative Studio project or bundle opens; a character card (PNG, CHARX or JSON) is imported into this project" onClick=${openFile} />
-            <${Button} icon="box-archive" label="Publish bundle…" onClick=${() => setPublishOpen(true)} />
-            <${Button} kind="primary" icon="upload" label="Apply to SillyTavern…" onClick=${() => setApplyOpen(true)} />
-        </div>
-        <div class="cs-area-body">
-            <${Generator} store=${store} env=${env} project=${project} select=${select} />
-            <div class="cs-row" role="list">${counts.map(([k, icon]) => html`<button role="listitem" class="cs-btn" onClick=${() => setArea(k === 'playtests' ? 'playtest' : AREA_FOR_TYPE[k] ?? 'project')}><${Icon} name=${icon} /> ${project[k]?.length ?? 0} ${k === 'regexScripts' ? 'global regex' : k === 'qrSets' ? 'QR sets' : k}</button>`)}
-                <span class="cs-muted cs-small">· ${project.proposals.filter(p => p.status === 'pending').length} pending AI proposals · saved ${project._loadedFrom ?? 'to SillyTavern user files'}</span></div>
-            <div class="cs-split">
-                <div class="cs-stack">
-                    <${TextArea} label="Premise" value=${project.premise ?? ''} onChange=${v => set('premise', v, 'Edited premise')} rows=${4} stats=${false} hint="Used by AI ideation in every workshop." />
-                    <${TextArea} label="Notes" value=${project.notes ?? ''} onChange=${v => set('notes', v, 'Edited notes')} rows=${4} stats=${false} />
-                </div>
-                <${Section} title=${`Health (${health.filter(h => h.level !== 'info').length} issues)`}>
-                    <${Diagnostics} items=${health} onPick=${d => d.target && select(d.target.type, d.target.id)} />
-                </${Section}>
+    return html`<div class="cs-area-body cs-home">
+            <div class="cs-home-heading"><div><h1>${project.characters.length ? 'Pick up your story.' : 'What would you like to create?'}</h1>
+                <p>${project.characters.length ? 'Your characters, world and pictures are together here. Choose a character to keep working.' : 'Start with an idea or a character you already have. You can add the rest as you go.'}</p></div>
+                <${Button} icon="upload" label="Use in SillyTavern…" disabled=${!hasItems} title="Review the project before applying it to SillyTavern" onClick=${() => setApplyOpen(true)} />
             </div>
-            <${Section} title="Relationships & dependencies">
+            <div class="cs-start-actions" aria-label="Start creating">
+                <button class="cs-start-action" onClick=${() => openCardImport()}><${Icon} name="file-import" /><strong>Import a card</strong><span>Open a PNG, CHARX or JSON character.</span></button>
+                <button class="cs-start-action" onClick=${openPullPicker}><${Icon} name="user-plus" /><strong>From SillyTavern</strong><span>Improve a copy of a character you own.</span></button>
+                <button class="cs-start-action" onClick=${newBlank}><${Icon} name="pen-nib" /><strong>Write a character</strong><span>A blank page, with help when you want it.</span></button>
+                <button class=${cx('cs-start-action', 'cs-start-ai', showGenerator && 'active')} aria-expanded=${showGenerator} onClick=${() => setGenerating(!generating)}><${Icon} name="wand-magic-sparkles" /><strong>Generate with AI</strong><span>${activeRuns.length ? 'Create something new or review generation progress.' : 'Turn a rough idea into a playable story.'}</span></button>
+            </div>
+            ${showGenerator && html`<${Generator} store=${store} env=${env} project=${project} select=${select} />`}
+            <div class="cs-home-section-title"><h2>${project.characters.length ? `Your characters (${project.characters.length})` : 'Your first character starts here'}</h2>
+                ${project.characters.length > 3 && html`<input class="text_pole" aria-label="Find a character" placeholder="Find a character…" value=${query} onInput=${e => setQuery(e.currentTarget.value)} />`}
+            </div>
+            ${project.characters.length ? html`<${CharacterLibrary} project=${project} characters=${characters} select=${select} />${!characters.length && html`<p class="cs-muted">No characters match “${query}”. Try another name.</p>`}` : html`
+                <div class="cs-first-path"><div><span>1</span><strong>Bring in or create a character</strong><p>Choose any starting point above.</p></div><div><span>2</span><strong>Make it yours</strong><p>Write the basics and an opening. Pictures and lore are optional.</p></div><div><span>3</span><strong>Try it, then take it to chat</strong><p>Test a conversation or export to SillyTavern when you’re ready.</p></div></div>`}
+            <div class="cs-home-tools">
+                <${Button} icon="book-atlas" label=${`World · ${project.lorebooks.length} lorebooks`} onClick=${() => setArea('lore')} />
+                <${Button} icon="images" label=${`Pictures · ${project.media.length}`} onClick=${() => setArea('media')} />
+                <${Button} icon="flask" label="Try a conversation" onClick=${() => setArea('playtest')} disabled=${!project.characters.length} />
+                <span class="cs-muted cs-small">Autosaved in the studio. Apply to SillyTavern when you choose.</span>
+            </div>
+            <${Section} title="Project details & notes" open=${false}>
+                <${TextInput} label="Project name" value=${project.name} onChange=${v => set('name', v, 'Renamed project')} />
+                <${TextArea} label="Story premise" value=${project.premise ?? ''} onChange=${v => set('premise', v, 'Edited premise')} rows=${4} stats=${false} hint="Shared background for AI writing throughout this project." />
+                <${TextArea} label="Your notes" value=${project.notes ?? ''} onChange=${v => set('notes', v, 'Edited notes')} rows=${3} stats=${false} />
+                <div class="cs-row"><${Button} icon="file-import" label="Open project or bundle…" onClick=${openFile} /><${Button} icon="box-archive" label="Download project bundle…" onClick=${() => setPublishOpen(true)} /></div>
+            </${Section}>
+            <${Section} title=${`Project checks${health.length ? ` · ${health.length} to review` : ' · no issues found'}`} open=${false}>
+                <${Diagnostics} items=${health} onPick=${d => d.target && select(d.target.type, d.target.id)} />
+            </${Section}>
+            ${deps.length > 0 && html`<${Section} title="Linked items & dependencies" open=${false}>
                 ${deps.length ? html`<table class="cs-table"><thead><tr><th>Character</th><th>Expects</th><th>Missing</th></tr></thead><tbody>
                     ${deps.map(d => html`<tr key=${d.characterId}>
                         <td><a href="#" onClick=${e => { e.preventDefault(); select('characters', d.characterId); }}>${d.name}</a></td>
@@ -63,7 +86,7 @@ export function ProjectArea({ store, env, project, select, setArea }) {
                     </tr>`)}
                 </tbody></table>` : html`<${Empty} icon="diagram-project" title="No characters yet">Relationships appear once characters link lorebooks, presets, regex and Quick Reply sets.</${Empty}>`}
                 <div class="cs-muted cs-small">Hover a dependency to see how it gets installed. Link items from each character's Lore tab, the Quick Reply set links, or character-scoped regex.</div>
-            </${Section}>
+            </${Section}>`}
         </div>
         ${publishOpen && html`<${PublishModal} store=${store} env=${env} project=${project} onClose=${() => setPublishOpen(false)} />`}
         ${applyOpen && html`<${ApplyPlan} store=${store} env=${env} project=${project} onClose=${() => setApplyOpen(false)} />`}`;

@@ -4,7 +4,11 @@
 
 <br />
 
-### *You bring one line, or nothing at all. It writes the whole roleplay.*
+### *Start with a character. Build the world around them.*
+
+**New in 0.3:** a task-focused Home, visual character and picture libraries, a simpler writing editor,
+portrait uploads, guided export, and searchable Help that takes you to the right screen.
+**[Start here: the short guide](docs/QUICKSTART.md).** Advanced tools remain available when you need them.
 
 A SillyTavern extension that generates a **complete, linked roleplay**: the premise, the character card,
 openings, a lorebook that actually fires, a prompt preset, formatting regex, Quick Reply buttons and image prompts.
@@ -14,7 +18,7 @@ Then it critiques its own work and fixes it. You steer; the AI writes.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-137%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-160%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -356,7 +360,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 
 ## ✦ Which AI does it use?
 
-**Whatever SillyTavern is already connected to.** There is no separate key and no separate setup. If SillyTavern
+**Whatever SillyTavern is already connected to.** If SillyTavern
 can chat, the studio can create.
 
 - **Best results:** a **Chat Completion** connection (OpenRouter, OpenAI, Claude, DeepSeek, Google, Mistral, or a
@@ -479,7 +483,7 @@ zip, and <b>Open file…</b> opens one (give it a character card and it imports 
 |---|---|
 | `Ctrl` `Shift` `S` | Open / close the studio |
 | `Ctrl` `K` | Command palette: jump to any workshop or artifact |
-| `Alt` `1`…`7` | Switch workshop |
+| `Alt` `1`…`8` | Switch workshop (8 opens Pictures) |
 | `Alt` `I` | Toggle the inspector |
 | `Ctrl` `Z` / `Ctrl` `Y` | Undo / redo (outside text fields) |
 | `Ctrl` `S` | Save now |
@@ -497,7 +501,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-137 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+160 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline. A live suite runs inside a SillyTavern tab against the real server (it creates and then removes
 `CSTEST_*` items):

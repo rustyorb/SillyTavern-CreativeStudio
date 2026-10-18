@@ -1,6 +1,6 @@
 // Creative Studio workbench shell: project tree | focused editor | inspector (AI proposals, history, diagnostics).
 import { render } from '../../vendor/preact-htm.mjs';
-import { html, useState, useEffect, useCallback, useMemo, Button, Icon, Badge, cx, pickFile } from './kit.js';
+import { html, useState, useEffect, useCallback, useMemo, useRef, Button, Icon, Badge, cx, pickFile } from './kit.js';
 import { createStore, useStore } from './store.js';
 import { createProject, findArtifact, isUntouchedBlank } from '../core/project.js';
 import { Workspace, AREA_FOR_TYPE } from './workspace.js';
@@ -10,6 +10,7 @@ import { AiSetup } from './providers-panel.js';
 import { StCharacterPicker, pullStCharacter, pulledSummary, characterFromSt, openPullPicker } from './st-pull.js';
 import { PromptSettings, ContentPill } from './prompt-settings.js';
 import { CARD_FILES, importAnyFile, openCardImport, dragDecision } from './importer.js';
+import { Guide } from './guide.js';
 
 /** A new project starts with the creation model chosen last time (if that profile still exists). */
 function withDefaultCreationModel(project) {
@@ -62,13 +63,14 @@ export function unmountStudio(root) {
 }
 
 export const AREAS = [
-    { id: 'project', label: 'Project', icon: 'diagram-project', key: '1' },
+    { id: 'project', label: 'Home', icon: 'house', key: '1' },
     { id: 'characters', label: 'Characters', icon: 'user-pen', key: '2' },
-    { id: 'lore', label: 'Lore', icon: 'book-atlas', key: '3' },
-    { id: 'prompts', label: 'Prompts & Presets', icon: 'sliders', key: '4' },
-    { id: 'regex', label: 'Regex Lab', icon: 'code', key: '5' },
-    { id: 'scripts', label: 'Quick Replies & STscript', icon: 'terminal', key: '6' },
-    { id: 'playtest', label: 'Playtest', icon: 'flask', key: '7' },
+    { id: 'lore', label: 'World', icon: 'book-atlas', key: '3' },
+    { id: 'prompts', label: 'Writing presets', icon: 'sliders', key: '4', advanced: true },
+    { id: 'regex', label: 'Text cleanup', icon: 'code', key: '5', advanced: true },
+    { id: 'scripts', label: 'Quick Replies', icon: 'terminal', key: '6', advanced: true },
+    { id: 'playtest', label: 'Try a conversation', icon: 'flask', key: '7' },
+    { id: 'media', label: 'Pictures', icon: 'images', key: '8' },
 ];
 
 function Studio({ store, env, initialRoute, onClose }) {
@@ -84,6 +86,32 @@ function Studio({ store, env, initialRoute, onClose }) {
     const [aiSetupOpen, setAiSetupOpen] = useState(false);
     const [pullOpen, setPullOpen] = useState(false);
     const [promptsOpen, setPromptsOpen] = useState(false);
+    const [guideOpen, setGuideOpen] = useState(false);
+    const [advancedOpen, setAdvancedOpen] = useState(false);
+    const [libraryOpen, setLibraryOpen] = useState(false);
+    useEffect(() => {
+        if (AREAS.find(a => a.id === area)?.advanced) setAdvancedOpen(true);
+    }, [area]);
+
+    const goArea = next => { setArea(next); setSelection(null); setLibraryOpen(false); };
+    useEffect(() => {
+        const navigate = e => {
+            if (!AREAS.some(a => a.id === e.detail?.area)) return;
+            setArea(e.detail.area);
+            setSelection(e.detail.selection ?? null);
+            setLibraryOpen(false);
+        };
+        globalThis.addEventListener('cs-navigate', navigate);
+        return () => globalThis.removeEventListener('cs-navigate', navigate);
+    }, []);
+    const previousProject = useRef(project.id);
+    useEffect(() => {
+        if (previousProject.current === project.id) return;
+        previousProject.current = project.id;
+        setSelection(null);
+        setArea('project');
+        setLibraryOpen(false);
+    }, [project.id]);
 
     useEffect(() => env.onSaveState(setSaveState), [env]);
     useEffect(() => {
@@ -216,43 +244,55 @@ function Studio({ store, env, initialRoute, onClose }) {
         } else if (mod && e.key.toLowerCase() === 's') {
             e.preventDefault();
             env.saveNow();
-        } else if (e.altKey && /^[1-7]$/.test(e.key)) {
+        } else if (e.altKey && /^[1-8]$/.test(e.key)) {
             e.preventDefault();
-            setArea(AREAS[Number(e.key) - 1].id);
+            goArea(AREAS[Number(e.key) - 1].id);
         } else if (e.altKey && e.key.toLowerCase() === 'i') {
             e.preventDefault();
             setInspectorOpen(o => !o);
         }
-    }, [store, env, onClose]);
+    }, [store, env, onClose, inspectorOpen]);
 
     return html`<div class="cs-studio" onKeyDown=${onKey} tabIndex="-1" role="application" aria-label="Creative Studio"
         onDragEnter=${onDragOver} onDragOver=${onDragOver} onDragLeave=${onDragLeave} onDrop=${onDrop}>
         <header class="cs-topbar">
             <div class="cs-brand"><${Icon} name="feather-pointed" /> Creative Studio</div>
             <${ProjectSwitcher} store=${store} env=${env} project=${project} />
-            <nav class="cs-areas" aria-label="Workshops">
-                ${AREAS.map(a => html`<button class=${cx('cs-area', area === a.id && 'active')} onClick=${() => setArea(a.id)}
-                    title=${`${a.label} (Alt+${a.key})`} aria-current=${area === a.id ? 'page' : undefined}>
-                    <${Icon} name=${a.icon} /><span>${a.label}</span>
-                </button>`)}
-            </nav>
+            <div class="cs-spacer"></div>
             <div class="cs-topbar-right">
                 <button class=${cx('cs-mode', handsFree ? 'is-auto' : 'is-review')} onClick=${toggleMode}
                     title=${handsFree ? 'Hands-free: AI writes straight into your project (every change is undoable and logged). Click to review AI output before it lands.' : 'Review: AI output waits as proposals you accept or reject. Click to let the AI write directly.'}
                     aria-pressed=${handsFree}>
-                    <${Icon} name=${handsFree ? 'bolt' : 'list-check'} /><span>${handsFree ? 'Hands-free' : 'Review'}</span>
+                    <${Icon} name=${handsFree ? 'bolt' : 'list-check'} /><span>${handsFree ? 'AI edits directly' : 'Review AI edits'}</span>
                 </button>
                 <${ContentPill} project=${project} />
-                <${Button} small icon="plug" title="AI for creation: choose the model or add a provider" onClick=${() => setAiSetupOpen(true)} />
-                <${Button} small icon="magnifying-glass" title="Command palette (Ctrl+K)" onClick=${() => setPaletteOpen(true)} />
-                <${Button} small icon="rotate-left" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
+                <${Button} small icon="plug" label="AI setup" title="AI for creation: choose the model or add a provider" onClick=${() => setAiSetupOpen(true)} />
+                <${Button} small icon="circle-question" label="Help" onClick=${() => setGuideOpen(true)} />
+                <${Button} small icon="magnifying-glass" label="Find" title="Find anything (Ctrl+K)" onClick=${() => setPaletteOpen(true)} />
+                <${Button} small icon="rotate-left" label="Undo" title=${store.canUndo() ? `Undo: ${store.peekUndo()} (Ctrl+Z)` : 'Nothing to undo'} disabled=${!store.canUndo()} onClick=${() => store.undo()} />
                 <${Button} small icon="rotate-right" title=${store.canRedo() ? `Redo: ${store.peekRedo()} (Ctrl+Y)` : 'Nothing to redo'} disabled=${!store.canRedo()} onClick=${() => store.redo()} />
                 <span class=${cx('cs-save', `cs-save-${saveState.status}`)} title=${saveState.detail ?? ''}>${saveState.label}</span>
                 <${Button} small icon=${inspectorOpen ? 'table-columns' : 'table-columns'} title=${`Inspector (Alt+I) — ${inspectorMode === 'auto' ? 'opens automatically when AI proposals are pending' : inspectorMode}`} ariaPressed=${inspectorOpen} onClick=${() => setInspectorOpen(!inspectorOpen)} />
                 <${Button} small icon="xmark" title="Close (Esc)" onClick=${onClose} />
             </div>
         </header>
+        <div class="cs-navigation">
+            <button class="cs-library-toggle cs-btn" aria-expanded=${libraryOpen} onClick=${() => setLibraryOpen(!libraryOpen)}><${Icon} name="folder-open" /> Project items</button>
+            <nav class="cs-areas" aria-label="Workshops">
+                ${['project', 'characters', 'lore', 'media', 'playtest'].map(id => {
+                    const a = AREAS.find(a => a.id === id);
+                    return html`<button key=${a.id} class=${cx('cs-area', area === a.id && 'active')} onClick=${() => goArea(a.id)}
+                        title=${`${a.label} (Alt+${a.key})`} aria-current=${area === a.id ? 'page' : undefined}><${Icon} name=${a.icon} /><span>${a.label}</span></button>`;
+                })}
+                <button class=${cx('cs-area', AREAS.find(a => a.id === area)?.advanced && 'active')} aria-expanded=${advancedOpen} onClick=${() => setAdvancedOpen(!advancedOpen)}><${Icon} name="sliders" /><span>Advanced tools</span><${Icon} name=${advancedOpen ? 'chevron-up' : 'chevron-down'} /></button>
+            </nav>
+        </div>
+        ${advancedOpen && html`<nav class="cs-advanced-nav" aria-label="Advanced tools">
+            <span class="cs-muted cs-small">Optional tools</span>${AREAS.filter(a => a.advanced).map(a => html`<button class=${cx('cs-area', area === a.id && 'active')} onClick=${() => goArea(a.id)} aria-current=${area === a.id ? 'page' : undefined}><${Icon} name=${a.icon} />${a.label}</button>`)}
+            <${Button} small icon="scroll" label="AI instructions" onClick=${() => setPromptsOpen(true)} />
+        </nav>`}
         <${Workspace} store=${store} env=${env} project=${project} area=${area} setArea=${setArea}
+            libraryOpen=${libraryOpen} closeLibrary=${() => setLibraryOpen(false)}
             selection=${selection} setSelection=${setSelection}
             inspector=${inspector} setInspector=${setInspector} inspectorOpen=${inspectorOpen} pending=${pending} openInspectorAt=${openInspectorAt} />
         ${paletteOpen && html`<${Palette} project=${project} areas=${AREAS} onClose=${() => setPaletteOpen(false)} onPick=${async i => {
@@ -271,7 +311,12 @@ function Studio({ store, env, initialRoute, onClose }) {
         ${pullOpen && html`<${StCharacterPicker} store=${store} env=${env} project=${project} onClose=${() => setPullOpen(false)} onDone=${showPulled} />`}
         ${promptsOpen && html`<${PromptSettings} store=${store} env=${env} project=${project} onClose=${() => setPromptsOpen(false)} />`}
         ${aiSetupOpen && html`<${AiSetup} store=${store} env=${env} project=${project} onClose=${() => setAiSetupOpen(false)} />`}
-        ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">${toast.text}</div>`}
+        ${guideOpen && html`<${Guide} project=${project} selection=${selection} onClose=${() => setGuideOpen(false)} />`}
+        ${toast && html`<div class=${cx('cs-toast', toast.kind && `cs-toast-${toast.kind}`)} role="status">
+            <span>${toast.text}</span>
+            ${toast.action && html`<${Button} label=${toast.action.label} disabled=${!toast.action.available()} title=${toast.action.available() ? 'Restore the deleted item' : 'Use Undo in the top bar to undo newer changes first'} onClick=${toast.action.run} />
+                <${Button} small icon="xmark" title="Dismiss notification" onClick=${() => setToast(null)} />`}
+        </div>`}
         ${dropping && html`<div class="cs-drop-overlay" aria-hidden="true">
             <div class="cs-drop-card"><${Icon} name="file-import" /> Drop a character card to import it into “${project.name}”</div>
         </div>`}

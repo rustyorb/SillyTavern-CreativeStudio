@@ -12,6 +12,7 @@ import { paint, imageSettings, imageReady, familyOf } from '../st/comfy.js';
 import { FAMILIES } from '../core/comfy.js';
 import { saveMedia } from './media.js';
 import { openPullPicker } from './st-pull.js';
+import { GENERATION_PRESETS } from '../core/workflow.js';
 
 /** Controllers of runs in flight, so any mounted view (or none) can cancel them. */
 const running = new Map();
@@ -155,9 +156,12 @@ function Fuse({ run, stuck }) {
 }
 
 export function Generator({ store, env, project, select }) {
-    const [idea, setIdea] = useState('');
-    const [dials, setDials] = useState(() => project.lastDials ?? {});
-    const [steps, setSteps] = useState(startingSteps);
+    const idea = project.generationDraft ?? '';
+    const setIdea = value => store.update(p => ({ ...p, generationDraft: value }), 'edit generation idea');
+    const dials = project.lastDials ?? {};
+    const setDials = value => store.update(p => ({ ...p, lastDials: value }), 'generation preferences');
+    const steps = project.generationSteps ?? GENERATION_PRESETS[0].steps;
+    const setSteps = value => store.update(p => ({ ...p, generationSteps: value }), 'generation scope');
     const [showDials, setShowDials] = useState(false);
     const runs = (project.generationRuns ?? []).filter(r => r.status !== 'discarded');
     // The live run first; otherwise the latest (a run left "running" by a reload shows as interrupted only if it is the latest).
@@ -185,17 +189,22 @@ export function Generator({ store, env, project, select }) {
     // The step list opens by itself whenever something needs attention.
     const trouble = active && Object.values(active.steps).some(s => ['failed', 'blocked'].includes(s.status) || s.warning || s.retrying);
     const stepsOpen = showSteps || trouble || stuck;
-    return html`<section class="cs-generator" aria-label="Generate a complete roleplay">
+    return html`<section class="cs-generator" aria-label="Generate with AI">
         <div class="cs-gen-head">
-            <h3><${Icon} name="wand-magic-sparkles" /> Generate a complete roleplay</h3>
+            <h3><${Icon} name="wand-magic-sparkles" /> Start with an idea</h3>
             <${CreationRoute} store=${store} project=${project} compact />
         </div>
+        <div class="cs-generation-presets" role="group" aria-label="What to create">${GENERATION_PRESETS.map(preset => {
+            const selected = preset.steps ?? startingSteps();
+            const chosen = selected.length === steps.length && selected.every(id => steps.includes(id));
+            return html`<button class=${cx('cs-generation-preset', chosen && 'active')} aria-pressed=${chosen} disabled=${isRunning} onClick=${() => setSteps(selected)}><strong>${preset.label}</strong><span>${preset.description}</span></button>`;
+        })}</div>
         <textarea class="text_pole cs-textarea cs-gen-idea" rows="3" value=${idea} onInput=${e => setIdea(e.currentTarget.value)}
             placeholder="Any rough idea — a line, a vibe, a character, a setting. Or leave it empty and let the AI surprise you." aria-label="Idea"></textarea>
         <div class="cs-row">
-            <${Button} kind="ai" icon="wand-magic-sparkles" label=${idea.trim() ? 'Generate it' : 'Surprise me'} onClick=${() => go(!idea.trim())} disabled=${isRunning} />
+            <${Button} kind="ai" icon="wand-magic-sparkles" label=${idea.trim() ? 'Create from my idea' : 'Surprise me'} onClick=${() => go(!idea.trim())} disabled=${isRunning} />
             ${idea.trim() && html`<${Button} icon="dice" label="Ignore my idea, surprise me" onClick=${() => go(true)} disabled=${isRunning} />`}
-            <${Button} small icon="sliders" label=${`Dials${Object.values(dials).filter(Boolean).length ? ` (${Object.values(dials).filter(Boolean).length})` : ''}`} ariaPressed=${showDials} onClick=${() => setShowDials(!showDials)} />
+            <${Button} small icon="sliders" label="Customize tone & steps" ariaPressed=${showDials} onClick=${() => setShowDials(!showDials)} />
             <span class="cs-spacer"></span>
             <${Button} small icon="user-plus" label="Start from one of my characters…"
                 title="Bring in a SillyTavern character with its lorebook and sprites; the AI improves it and builds what it is missing" onClick=${openPullPicker} />
@@ -205,6 +214,7 @@ export function Generator({ store, env, project, select }) {
         </div>
         <div class="cs-row cs-small"><span class="cs-muted">Build:</span>${STEPS.map(s => html`<label key=${s.id} class="cs-toggle"><input type="checkbox" checked=${steps.includes(s.id)} disabled=${['premise', 'concept', 'card'].includes(s.id) || (s.id === 'art' && !imagesOn())} title=${s.id === 'art' && !imagesOn() ? 'Set up images first (plug icon → Images)' : ''}
             onChange=${e => setSteps(e.currentTarget.checked ? [...steps, s.id] : steps.filter(x => x !== s.id))} /><span>${s.label}</span></label>`)}</div>`}
+        <p class="cs-generation-note">${steps.length} steps selected. Uses your chosen AI connection. Creates new project items; existing characters stay as they are.</p>
         ${active && html`<div class="cs-gen-run">
             <div class="cs-row-between">
                 <div class=${cx('cs-gen-card', active.status === 'done' && 'is-done')}>

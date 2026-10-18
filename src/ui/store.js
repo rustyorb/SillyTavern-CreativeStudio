@@ -15,6 +15,7 @@ export function createStore(initial, { sticky = [] } = {}) {
     const redo = [];
     let lastLabel = '';
     let lastTime = 0;
+    let undoRevision = 0;
 
     const emit = () => listeners.forEach(l => l(state));
     const keepSticky = restored => (sticky.length ? { ...restored, ...Object.fromEntries(sticky.filter(k => k in state).map(k => [k, state[k]])) } : restored);
@@ -49,11 +50,13 @@ export function createStore(initial, { sticky = [] } = {}) {
             lastLabel = label;
             lastTime = t;
             redo.length = 0;
+            undoRevision++;
             state = next;
             emit();
         },
         /** Replace without recording undo (loading a project). */
         reset(next) {
+            undoRevision++;
             state = next;
             undo.length = 0;
             redo.length = 0;
@@ -63,6 +66,7 @@ export function createStore(initial, { sticky = [] } = {}) {
         undo() {
             const step = undo.pop();
             if (!step) return null;
+            undoRevision++;
             redo.push({ state, label: step.label });
             state = keepSticky(step.state);
             lastLabel = '';
@@ -72,6 +76,7 @@ export function createStore(initial, { sticky = [] } = {}) {
         redo() {
             const step = redo.pop();
             if (!step) return null;
+            undoRevision++;
             undo.push({ state, label: step.label });
             state = keepSticky(step.state);
             lastLabel = '';
@@ -79,6 +84,7 @@ export function createStore(initial, { sticky = [] } = {}) {
             return step.label;
         },
         canUndo: () => undo.length > 0,
+        undoRevision: () => undoRevision,
         canRedo: () => redo.length > 0,
         peekUndo: () => undo[undo.length - 1]?.label ?? '',
         peekRedo: () => redo[redo.length - 1]?.label ?? '',

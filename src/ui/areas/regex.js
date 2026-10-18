@@ -11,6 +11,7 @@ import { defaultScript, PLACEMENT_LABEL, SUBSTITUTE_LABEL, STAGES, lintScripts, 
 import { clone, uid, utf8Decode, utf8Encode } from '../../core/bytes.js';
 import { getStRegex, saveStGlobalRegex } from '../../st/live.js';
 import { recordBackup } from '../inspector.js';
+import { DeleteButton, deleteWithUndo } from '../deletion.js';
 
 export const newRegexArtifact = name => ({ id: uid('rx'), scope: 'global', script: defaultScript(name) });
 
@@ -117,7 +118,7 @@ export function RegexArea({ store, env, project, selection, select }) {
             </div>
             <div class="cs-muted cs-small">SillyTavern runs scripts in this order: global, then preset-scoped (if allowed), then character-scoped (if allowed). Each script's output feeds the next. Scoped scripts need the user's permission on first use.</div>
             <div class="cs-split-3" style="grid-template-columns:minmax(260px,340px) minmax(0,1fr)">
-                <${ScriptList} all=${all} cur=${cur} keyOf=${keyOf} setSelKey=${setSelKey} lint=${lint} store=${store} />
+                <${ScriptList} all=${all} cur=${cur} keyOf=${keyOf} setSelKey=${setSelKey} lint=${lint} store=${store} env=${env} />
                 <div class="cs-stack">
                     ${cur ? html`
                         <${Tabs} tabs=${[{ id: 'edit', label: 'Script', icon: 'pen' }, { id: 'test', label: 'Stage preview', icon: 'flask' }, { id: 'lint', label: 'Diagnostics', icon: 'stethoscope', badge: lint.filter(i => i.level !== 'info').length }]} active=${tab} onChange=${setTab} />
@@ -131,7 +132,7 @@ export function RegexArea({ store, env, project, selection, select }) {
         ${genOpen && html`<${GenerateRegex} store=${store} env=${env} project=${project} onClose=${() => setGenOpen(false)} addGlobal=${addGlobal} />`}`;
 }
 
-function ScriptList({ all, cur, keyOf, setSelKey, lint, store }) {
+function ScriptList({ all, cur, keyOf, setSelKey, lint, store, env }) {
     const flagged = new Set(lint.filter(i => i.level !== 'info').map(i => i.id));
     const groups = ['global', 'preset', 'character'];
     const moveGlobal = (id, d) => store.update(p => {
@@ -146,37 +147,48 @@ function ScriptList({ all, cur, keyOf, setSelKey, lint, store }) {
         ${groups.map(g => {
             const items = all.filter(x => x.scope === g);
             return html`<div key=${g}><div class="cs-small cs-muted" style="text-transform:uppercase;letter-spacing:.05em">${g} (${items.length})</div>
-                <ul class="cs-list">${items.map((x, i) => html`<li key=${keyOf(x)} class=${cx('cs-list-item', cur && keyOf(cur) === keyOf(x) && 'active', x.script.disabled && 'disabled')} onClick=${() => setSelKey(keyOf(x))}>
+                <ul class="cs-list">${items.map((x, i) => html`<li key=${keyOf(x)} class=${cx('cs-list-item cs-removable-row', cur && keyOf(cur) === keyOf(x) && 'active', x.script.disabled && 'disabled')}>
                     <span class="cs-muted cs-small" style="min-width:18px">${all.indexOf(x) + 1}</span>
-                    <span class="cs-grow" title=${x.script.scriptName}>${x.script.scriptName || '(unnamed)'}</span>
+                    <button class="cs-item-open" onClick=${() => setSelKey(keyOf(x))}><span>${x.script.scriptName || '(unnamed)'}</span></button>
                     ${flagged.has(x.script.id) && html`<${Icon} name="triangle-exclamation" />`}
                     <span class="cs-kind" title="Mode">${x.script.markdownOnly && x.script.promptOnly ? 'D+P' : x.script.markdownOnly ? 'D' : x.script.promptOnly ? 'P' : 'S'}</span>
                     ${g === 'global' && html`<span class="cs-row" style="gap:0"><button class="cs-btn cs-btn-sm" aria-label="Move up" onClick=${e => { e.stopPropagation(); moveGlobal(x.loc.id, -1); }}>↑</button><button class="cs-btn cs-btn-sm" aria-label="Move down" onClick=${e => { e.stopPropagation(); moveGlobal(x.loc.id, 1); }}>↓</button></span>`}
+                    <${DeleteRegexButton} store=${store} env=${env} item=${x} setSelKey=${setSelKey} />
                 </li>`)}</ul></div>`;
         })}
         <div class="cs-small cs-muted">Mode: D = display only, P = prompt only, D+P = both, S = rewrites stored chat text.</div>
     </div>`;
 }
 
+function DeleteRegexButton({ store, env, item, setSelKey, label = 'Delete' }) {
+    const name = item.script.scriptName || 'Untitled regex';
+    const parent = item.loc.kind === 'global' ? 'the project’s global scripts'
+        : item.loc.kind === 'preset' ? `preset “${findArtifact(store.get(), 'presets', item.loc.id)?.name ?? ''}”`
+            : `character “${findArtifact(store.get(), 'characters', item.loc.id)?.card.data.name ?? ''}”`;
+    return html`<${DeleteButton} name=${name} label=${label} detail=${`Only this regex is removed from ${parent}.`} onDelete=${() => {
+        const removed = deleteWithUndo(store, env, p => {
+            if (item.loc.kind === 'global') return findArtifact(p, 'regexScripts', item.loc.id)
+                ? removeArtifact(p, 'regexScripts', item.loc.id, { summary: `Deleted regex ${name}` }) : p;
+            const [type, path] = listPath(item.loc);
+            const art = findArtifact(p, type, item.loc.id);
+            const list = (item.loc.kind === 'preset' ? art?.data.extensions?.regex_scripts : art?.card.data.extensions?.regex_scripts) ?? [];
+            const index = list.findIndex(s => s === item.script || (item.script.id && s.id === item.script.id));
+            if (index < 0) return p;
+            return editArtifactField(p, type, item.loc.id, path, list.filter((_, i) => i !== index), { summary: `Deleted regex ${name}` });
+        }, `Deleted regex ${name}`);
+        if (removed) setSelKey('');
+    }} />`;
+}
+
 function ScriptEditor({ store, env, project, item, setSelKey }) {
     const s = item.script;
     const set = (patch, summary) => writeScript(store, item.loc, { ...s, ...patch }, summary);
     const re = useMemo(() => regexFromString(s.findRegex || '(?:)'), [s.findRegex]);
-    const remove = () => {
-        if (item.loc.kind === 'global') store.update(p => removeArtifact(p, 'regexScripts', item.loc.id, { summary: `Removed regex ${s.scriptName}` }), 'remove regex');
-        else {
-            const [type, path] = listPath(item.loc);
-            const art = findArtifact(store.get(), type, item.loc.id);
-            const list = (item.loc.kind === 'preset' ? art.data.extensions.regex_scripts : art.card.data.extensions.regex_scripts).filter((_, i) => i !== item.loc.index);
-            store.update(p => editArtifactField(p, type, item.loc.id, path, list, { summary: `Removed regex ${s.scriptName}` }), 'remove regex');
-        }
-        setSelKey('');
-    };
     const exportOne = () => downloadBlob(utf8Encode(JSON.stringify(s, null, 4)), `regex-${(s.scriptName || 'script').replace(/[^\w-]+/g, '_')}.json`, 'application/json');
     const mode = s.markdownOnly && s.promptOnly ? 'both' : s.markdownOnly ? 'display' : s.promptOnly ? 'prompt' : 'stored';
     return html`<div class="cs-stack">
         <div class="cs-row-between"><div class="cs-row"><${Badge} kind="accent">${item.scope}</${Badge}><${Toggle} label="Enabled" checked=${!s.disabled} onChange=${v => set({ disabled: !v }, 'Toggled regex')} /></div>
-            <div class="cs-row"><${Button} small icon="download" label="Export" onClick=${exportOne} /><${Button} small icon="trash" kind="danger" label="Delete" onClick=${remove} /></div></div>
+            <div class="cs-row"><${Button} small icon="download" label="Export" onClick=${exportOne} /><${DeleteRegexButton} store=${store} env=${env} item=${item} setSelKey=${setSelKey} label="Delete regex" /></div></div>
         <${TextInput} label="Script name" value=${s.scriptName} onChange=${v => set({ scriptName: v })} />
         <${TextInput} label="Find regex" value=${s.findRegex} onChange=${v => set({ findRegex: v })} mono hint=${re ? `Compiles as /${re.source}/${re.flags}${re.flags.includes('g') ? '' : ' — first match only (no g flag)'}` : 'Does not compile: SillyTavern will skip this script.'} />
         <${TextArea} label="Replace with" value=${s.replaceString} onChange=${v => set({ replaceString: v })} rows=${3} mono stats=${false} hint="{{match}} or $0 = whole match, $1… = groups, $<name> = named group, macros like {{char}} are expanded. $& and $$ are NOT special in ST." />

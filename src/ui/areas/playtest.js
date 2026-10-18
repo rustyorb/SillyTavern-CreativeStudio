@@ -10,8 +10,8 @@ import { activeConfiguration, dryRunPrompt } from '../../st/live.js';
 import { readStWorldInfoSettings } from '../../st/env.js';
 import { clone, uid } from '../../core/bytes.js';
 
-export function PlaytestArea({ store, env, project, select }) {
-    const [characterId, setCharacterId] = useState(project.characters[0]?.id ?? '');
+export function PlaytestArea({ store, env, project, select, selection, setArea }) {
+    const [characterId, setCharacterId] = useState(project.characters.find(c => c.id === selection?.id)?.id ?? project.characters[0]?.id ?? '');
     const [presetId, setPresetId] = useState(project.presets.find(p => p.kind === 'cc')?.id ?? '');
     const [profileId, setProfileId] = useState(project.settings?.roleplayProfileId ?? '');
     const [scenarioId, setScenarioId] = useState(project.playtestScenarios?.[0]?.id ?? '');
@@ -115,25 +115,28 @@ export function PlaytestArea({ store, env, project, select }) {
     };
 
     return html`<div class="cs-area-head">
-            <h3><${Icon} name="flask" /> Playtest</h3>
+            <h3><${Icon} name="flask" /> Try a conversation</h3>
             <div class="cs-spacer"></div>
             <${Button} icon="camera" label="Capture current ST chat" title="Store the open SillyTavern chat with the active API, model, presets and the dry-run prompt" onClick=${capture} />
         </div>
         <div class="cs-area-body">
-            ${!project.characters.length ? html`<${Empty} icon="flask" title="Add a character first" />` : html`
+            <p class="cs-page-intro">See how your character feels in a conversation. Choose a character and a connection, then start with its opening message. Messages here stay separate from your SillyTavern chat.</p>
+            ${!project.characters.length ? html`<${Empty} icon="flask" title="Add a character first">Import a card or write a character, then come back to try it.<div class="cs-row"><${Button} label="Open characters" onClick=${() => setArea('characters')} /></div></${Empty}>` : html`
             <div class="cs-split">
                 <div class="cs-stack">
-                    <${Section} title="Setup">
+                    <${Section} title="Choose your character & model">
                         <div class="cs-grid">
                             <${Select} label="Character" value=${characterId} options=${project.characters.map(c => ({ value: c.id, label: c.card.data.name }))} onChange=${v => { setCharacterId(v); setRun(null); }} />
+                            <${Select} label="Connection profile" value=${profileId} options=${[{ value: '', label: 'Main connection' }, ...profiles.map(p => ({ value: p.id, label: p.name }))]} onChange=${v => { setProfileId(v); store.update(p => ({ ...p, settings: { ...p.settings, roleplayProfileId: v } }), 'roleplay profile'); }} />
+                        </div>
+                        <${Section} title="Conversation options" open=${false}><div class="cs-grid">
                             <${Select} label="Greeting" value=${greeting} options=${greetings.map((g, i) => ({ value: i, label: `${i === 0 ? 'First message' : `Alternate #${i}`}: ${String(g).slice(0, 40)}` }))} onChange=${v => setGreeting(Number(v))} />
                             <${Select} label="Prompt preset (project)" value=${presetId} options=${[{ value: '', label: 'Default prompts' }, ...project.presets.filter(p => p.kind === 'cc').map(p => ({ value: p.id, label: p.name }))]} onChange=${setPresetId} />
-                            <${Select} label="Connection profile" value=${profileId} options=${[{ value: '', label: 'Main connection' }, ...profiles.map(p => ({ value: p.id, label: p.name }))]} onChange=${v => { setProfileId(v); store.update(p => ({ ...p, settings: { ...p.settings, roleplayProfileId: v } }), 'roleplay profile'); }} />
                             <${NumberInput} label="Max reply tokens" value=${maxTokens} min=${16} onChange=${v => setMaxTokens(v ?? 350)} />
                             <${Toggle} label="Scan embedded lorebook" checked=${useEmbedded} onChange=${setUseEmbedded} title="Only if users will import the card's book in ST" />
-                        </div>
+                        </div></${Section}>
                         <div class="cs-small ${route.ok ? 'cs-muted' : 'cs-err-text'}">${route.label}. The sandbox builds the prompt from project artifacts (card, linked lore activation, preset prompts, prompt-stage regex); it does not touch SillyTavern chats.</div>
-                        <div class="cs-row"><${Button} kind="primary" icon="play" label=${run ? 'Restart' : 'Start playtest'} onClick=${start} disabled=${!ch || busy} /></div>
+                        <div class="cs-row"><${Button} kind="primary" icon="play" label=${run ? 'Start over' : 'Start conversation'} onClick=${start} disabled=${!ch || busy} /></div>
                     </${Section}>
                     <${ScenarioEditor} store=${store} ch=${ch} scenarios=${scenarios} setScenarios=${setScenarios} scenarioId=${scenarioId} setScenarioId=${setScenarioId} characterId=${characterId} />
                 </div>
@@ -191,7 +194,7 @@ function ScenarioEditor({ store, ch, scenarios, setScenarios, scenarioId, setSce
         setScenarios([...(store.get().playtestScenarios ?? []), ...made]);
         setScenarioId(made[0]?.id ?? scenarioId);
     };
-    return html`<${Section} title=${`Scenarios (${scenarios.length})`} right=${html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Invent 3" title="AI designs short playtests that probe voice, conflict, lore recall and pacing" onClick=${invent} disabled=${ai.busy || !ch} /><${Button} small icon="plus" label="Scenario" onClick=${() => { const s = newScenario(`Scenario ${scenarios.length + 1}`, characterId); setScenarios([...scenarios, s]); setScenarioId(s.id); }} />`}>
+    return html`<${Section} title=${`Reusable test scenarios (${scenarios.length})`} open=${false} right=${html`<${Button} small kind="ai" icon="wand-magic-sparkles" label="Invent 3" title="AI designs short playtests that probe voice, conflict, lore recall and pacing" onClick=${invent} disabled=${ai.busy || !ch} /><${Button} small icon="plus" label="Scenario" onClick=${() => { const s = newScenario(`Scenario ${scenarios.length + 1}`, characterId); setScenarios([...scenarios, s]); setScenarioId(s.id); }} />`}>
         ${scenarios.length ? html`<div class="cs-row">${scenarios.map(s => html`<${Button} small key=${s.id} label=${s.name} ariaPressed=${s.id === scenarioId} onClick=${() => setScenarioId(s.id)} />`)}</div>` : html`<div class="cs-muted cs-small">Scenarios are scripted user turns you can replay against different versions of the card, lore or preset.</div>`}
         ${cur && html`<${TextInput} label="Name" value=${cur.name} onChange=${v => set({ name: v })} />
             <${TextArea} label="User turns (one per line)" value=${cur.userTurns.join('\n')} onChange=${v => set({ userTurns: v.split('\n').filter(x => x.trim()) })} rows=${5} stats=${false} />

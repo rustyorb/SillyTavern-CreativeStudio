@@ -29,6 +29,9 @@ import { saveMedia, mediaBytes, toPngBytes } from '../media.js';
 import { recordBackup } from '../inspector.js';
 import { openCardImport } from '../importer.js';
 import { MediaView } from './media.js';
+import { CHARACTER_TABS, TAB_HELP, characterProgress } from '../../core/workflow.js';
+import { CharacterLibrary } from '../character-library.js';
+import { navigateStudio } from '../guide.js';
 
 export function CharactersArea(props) {
     const { project, selection } = props;
@@ -42,6 +45,7 @@ export function CharactersArea(props) {
 // ============================================================================================ home
 
 function CharacterHome({ store, env, project, select }) {
+    const [query, setQuery] = useState('');
     const add = (art, summary) => {
         store.update(p => upsertArtifact(p, 'characters', art, { action: 'create', actor: art.origin?.kind === 'import' ? 'import' : 'user', summary }), 'create character');
         select('characters', art.id);
@@ -56,23 +60,12 @@ function CharacterHome({ store, env, project, select }) {
             <${Button} icon="user-plus" label="From SillyTavern…" title="Bring in one of your SillyTavern characters with its lorebook and sprites" onClick=${openPullPicker} />
         </div>
         <div class="cs-area-body">
+            <p class="cs-page-intro">Choose a character to keep writing. Start with the basics; add world details, pictures and extra tools when you need them.</p>
+            ${chars.length > 0 && html`<input class="text_pole cs-library-search" aria-label="Find a character" placeholder="Find a character…" value=${query} onInput=${e => setQuery(e.currentTarget.value)} />`}
+            <${CharacterLibrary} project=${project} characters=${chars.filter(c => c.card.data.name.toLowerCase().includes(query.toLowerCase()))} select=${select} />
+            ${chars.length > 0 && !chars.some(c => c.card.data.name.toLowerCase().includes(query.toLowerCase())) && html`<p class="cs-muted">No matching characters.</p>`}
+            ${!chars.length && html`<${Empty} icon="user-pen" title="Bring your first character in">Use Import card for a file, From SillyTavern for an existing character, or New character to write your own.</${Empty}>`}
             <${Ideation} store=${store} env=${env} project=${project} select=${select} />
-            <${Section} title=${`In this project (${chars.length})`}>
-                ${chars.length ? html`<table class="cs-table">
-                    <thead><tr><th>Name</th><th>Kind</th><th>Greetings</th><th>Lore</th><th>Origin</th><th>Issues</th></tr></thead>
-                    <tbody>${chars.map(c => {
-                        const issues = validateCardV3(c.card).filter(i => i.level !== 'info');
-                        return html`<tr key=${c.id} class="cs-list-item" onClick=${() => select('characters', c.id)} style="cursor:pointer">
-                            <td><strong>${c.card.data.name || '(unnamed)'}</strong>${c.card.data.nickname ? html` <span class="cs-muted">“${c.card.data.nickname}”</span>` : ''}</td>
-                            <td>${c.kind}</td>
-                            <td>${1 + (c.card.data.alternate_greetings?.length ?? 0)}${c.card.data.group_only_greetings?.length ? ` +${c.card.data.group_only_greetings.length} group` : ''}</td>
-                            <td>${c.card.data.character_book?.entries?.length ?? 0} embedded · ${c.links?.lorebooks?.length ?? 0} linked</td>
-                            <td>${c.origin?.kind === 'st' ? html`<${Badge} kind="accent">ST: ${c.origin.avatar}</${Badge}>` : c.origin?.kind === 'import' ? c.origin.format : 'new'}</td>
-                            <td>${issues.length ? html`<${Badge} kind="warn">${issues.length}</${Badge}>` : html`<${Badge} kind="ok">ok</${Badge}>`}</td>
-                        </tr>`;
-                    })}</tbody>
-                </table>` : html`<${Empty} icon="user-pen" title="No characters yet">Start from a premise above, import a card (or drop one here), or bring one in from SillyTavern.</${Empty}>`}
-            </${Section}>
         </div>`;
 }
 
@@ -104,7 +97,7 @@ function Ideation({ store, env, project, select }) {
         startGeneration(store, env, newRun({ idea: [premise, constraints].filter(Boolean).join('\n'), dials: project.lastDials ?? {} }));
         env.toast('Building the whole roleplay: follow progress in Project → Generate.', 'ok', 6000);
     };
-    return html`<${Section} title="Ideate from a premise" right=${html`<${CreationRoute} store=${store} project=${project} compact />`}>
+    return html`<${Section} title="Need an idea? Explore character concepts with AI" open=${false} right=${html`<${CreationRoute} store=${store} project=${project} compact />`}>
         <${TextArea} label="Premise" value=${premise} onChange=${setPremise} rows=${3} stats=${false}
             placeholder="A rough idea: setting, tone, the kind of story you want to play, rating, anything you already know…" />
         <div class="cs-row">
@@ -158,22 +151,14 @@ function ConceptCard({ store, env, proposal, select }) {
 
 // ============================================================================================ editor
 
-const EDITOR_TABS = [
-    { id: 'core', label: 'Core', icon: 'id-card' },
-    { id: 'greetings', label: 'Greetings', icon: 'comment' },
-    { id: 'examples', label: 'Examples', icon: 'comments' },
-    { id: 'prompts', label: 'Prompt overrides', icon: 'terminal' },
-    { id: 'lore', label: 'Lore', icon: 'book' },
-    { id: 'images', label: 'Images', icon: 'image' },
-    { id: 'meta', label: 'Metadata & assets', icon: 'tags' },
-    { id: 'extensions', label: 'Extension data', icon: 'puzzle-piece' },
-    { id: 'compat', label: 'Compatibility', icon: 'list-check' },
-    { id: 'publish', label: 'Export & SillyTavern', icon: 'upload' },
-];
+const EDITOR_TABS = CHARACTER_TABS;
 
 function CharacterEditor(props) {
     const { store, env, project, ch } = props;
-    const [tab, setTab] = useState('core');
+    const tab = EDITOR_TABS.some(t => t.id === props.selection?.tab) ? props.selection.tab : 'core';
+    const setTab = next => props.setSelection({ type: 'characters', id: ch.id, tab: next });
+    const [advanced, setAdvanced] = useState(false);
+    const progress = characterProgress(ch);
     const d = ch.card.data;
     const setPath = (path, value, summary) => store.update(p => editArtifactField(p, 'characters', ch.id, path, value, { summary }), `edit ${path}`);
     const setData = (field, value) => setPath(`card.data.${field}`, value, `Edited ${CARD_FIELDS[field] ?? field}`);
@@ -191,6 +176,7 @@ function CharacterEditor(props) {
     const ep = { ...props, setData, setPath, d, setTab };
     const byline = [ch.kind === 'scenario' ? 'Scenario' : 'Character', d.character_version && `v${d.character_version}`, d.creator && `by ${d.creator}`, d.nickname && `“${d.nickname}”`].filter(Boolean).join(' · ');
     return html`<div class="cs-area-head cs-entity-head" style=${avatar ? `background-image:url("${avatar.url}")` : ''}>
+            <${Button} small icon="arrow-left" title="Back to characters" onClick=${() => props.setSelection(null)} />
             ${avatar ? html`<img src=${avatar.url} alt="" width="46" height="46" style="border-radius:6px;object-fit:cover;border:1px solid var(--cs-line)" />`
                 : html`<div class="cs-monogram" aria-hidden="true">${monogram(d.name)}</div>`}
             <div class="cs-entity-title"><h3>${d.name || '(unnamed)'}</h3><span class="cs-byline">${byline}</span></div>
@@ -200,8 +186,15 @@ function CharacterEditor(props) {
             <${CreationRoute} store=${store} project=${project} compact />
             <${Button} small icon="trash" kind="danger" title="Remove from project" onClick=${remove} />
         </div>
-        <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+        <${Tabs} tabs=${tabs.filter(t => !t.advanced)} active=${tab} onChange=${setTab} right=${html`<${Button} small icon="sliders" label="Advanced" ariaPressed=${advanced || EDITOR_TABS.find(t => t.id === tab)?.advanced} onClick=${() => { setAdvanced(!advanced); if (EDITOR_TABS.find(t => t.id === tab)?.advanced) setTab('core'); }} />`} />
+        ${(advanced || EDITOR_TABS.find(t => t.id === tab)?.advanced) && html`<${Tabs} tabs=${tabs.filter(t => t.advanced)} active=${tab} onChange=${setTab} />`}
         <div class="cs-area-body">
+            ${TAB_HELP[tab] && html`<p class="cs-page-intro">${TAB_HELP[tab]}</p>`}
+            <div class="cs-character-progress" aria-label="Character basics">
+                ${progress.steps.map(step => html`<button class=${cx('cs-progress-step', step.done && 'is-done')} onClick=${() => setTab(step.tab)} title=${`${step.label}: ${step.done ? 'written' : 'still to write'}`}><${Icon} name=${step.done ? 'circle-check' : 'circle'} />${step.label}</button>`)}
+                <span class="cs-spacer"></span>
+                ${progress.ready ? html`<${Button} small icon="flask" label="Try a conversation" onClick=${() => navigateStudio({ area: 'playtest', selection: { type: 'characters', id: ch.id } })} />` : html`<span class="cs-muted cs-small">${progress.complete} of ${progress.total} basics written</span>`}
+            </div>
             ${isUntouchedBlank(ch, project) && html`<div class="cs-blank-hint" role="note">
                 <${Icon} name="file-import" />
                 <span>This ${ch.kind === 'scenario' ? 'scenario' : 'character'} is empty. Have a card already? Import it in place of this one, or fill in the fields below.</span>
@@ -310,19 +303,21 @@ function CoreTab(p) {
     };
     return html`
         <div class="cs-grid">
-            <${TextInput} label="Name" value=${d.name} onChange=${v => setData('name', v)} hint="Becomes {{char}}. Renaming a linked ST character requires ST's rename." />
+            <${TextInput} label="Name" value=${d.name} onChange=${v => setData('name', v)} placeholder="What are they called?" hint="The name used in your story." />
+            <${Select} label="Card type" value=${ch.kind} options=${[{ value: 'character', label: 'A character' }, { value: 'scenario', label: 'A scenario / narrator' }]} onChange=${v => store.update(pr => editArtifactField(pr, 'characters', ch.id, 'kind', v), 'kind')} />
+        </div>
+        <${Section} title="Tags, credit & version" open=${false}><div class="cs-grid">
             <${TextInput} label="Nickname (V3)" value=${d.nickname ?? ''} onChange=${v => setData('nickname', v || undefined)} hint="Valid V3; SillyTavern 1.19 stores but ignores it." />
             <${TagsInput} label="Tags" items=${d.tags} onChange=${v => setData('tags', v)} />
             <${TextInput} label="Creator" value=${d.creator} onChange=${v => setData('creator', v)} />
             <${TextInput} label="Version" value=${d.character_version} onChange=${v => setData('character_version', v)} />
-            <${Select} label="Kind" value=${ch.kind} options=${[{ value: 'character', label: 'Character' }, { value: 'scenario', label: 'Scenario / narrator' }]} onChange=${v => store.update(pr => editArtifactField(pr, 'characters', ch.id, 'kind', v), 'kind')} />
-        </div>
+        </div></${Section}>
         ${ch.origin?.kind === 'st' && html`<div class="cs-st-copy">
             <${Icon} name="feather-pointed" />
             <span class="cs-grow">A copy of <strong>${ch.origin.avatar}</strong> from SillyTavern. Improve it here; SillyTavern changes only when you apply it, and its current version is kept as a backup.</span>
             <${Button} small icon="upload" label="Apply to SillyTavern…" onClick=${() => p.setTab('publish')} />
         </div>`}
-        <div class="cs-row">
+        <${Section} title="Build more or review this character with AI" open=${false}><div class="cs-row">
             <${Button} kind="gild" icon="feather-pointed" label=${building ? 'Building…' : 'Build the rest for me'} disabled=${building}
                 title="Fills every empty field, then writes openings, lore, a preset, regex, Quick Replies and image prompts around this character. Fields you wrote are kept."
                 onClick=${() => developCharacter(store, env, ch.id)} />
@@ -330,7 +325,8 @@ function CoreTab(p) {
             <${AiStatus} ai=${ai} />
             ${!building && html`<span class="cs-muted cs-small">${buildsWhat(ch)}</span>`}
         </div>
-        ${building && html`<div class="cs-muted cs-small"><span class="cs-spin"><${Icon} name="spinner" /></span> Building around ${d.name}: ${building.selected.filter(id => building.steps[id]?.status === 'done').length} of ${building.selected.length} steps done. Progress also shows in Project → Generate.</div>`}
+        </${Section}>
+        ${building && html`<div class="cs-muted cs-small"><span class="cs-spin"><${Icon} name="spinner" /></span> Building around ${d.name}: ${building.selected.filter(id => building.steps[id]?.status === 'done').length} of ${building.selected.length} steps done. Follow progress on Home.</div>`}
         ${ch.critique && html`<${Section} title=${`Critique · ${new Date(ch.critique.time).toLocaleString()}`}>
             ${ch.critique.strengths?.length > 0 && html`<div class="cs-small"><strong>Strengths:</strong> ${ch.critique.strengths.join(' · ')}</div>`}
             <${Diagnostics} items=${ch.critique.notes} />
@@ -338,7 +334,7 @@ function CoreTab(p) {
         <${AiField} ...${p} field="description" label="Description" rows=${10} hint="Appearance, background, behaviour and speech patterns: concrete material the model can act on." />
         <${AiField} ...${p} field="personality" label="Personality" rows=${4} hint="Often folded into the description by modern cards; keep short if used." />
         <${AiField} ...${p} field="scenario" label="Scenario" rows=${4} hint="The situation right now, and the pressure that forces choices." />
-        <${AiField} ...${p} field="first_mes" label="First message" rows=${8} hint="Opens a scene and hands {{user}} a clear moment to act. Don't act for {{user}}." />
+        <div class="cs-next-step"><div><strong>Next, give the story an opening.</strong><p>The first message sets the scene and gives the player a way in.</p></div><${Button} kind="primary" icon="comment" label="Write the opening" onClick=${() => p.setTab('greetings')} /></div>
     `;
 }
 
@@ -538,6 +534,25 @@ function ImagesTab({ store, env, project, ch }) {
     const avatarPic = ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null;
     const spriteSource = ch.spriteSource ?? (['st', 'import'].includes(ch.origin?.kind) || !Object.keys(sprites).length ? 'avatar' : 'fresh');
     const fromAvatar = !!avatarPic && spriteSource === 'avatar';
+    const uploadPortrait = async () => {
+        const file = await pickFile('image/png,image/jpeg,image/webp,image/gif');
+        if (!file) return;
+        setBusy('upload');
+        try {
+            const bitmap = await createImageBitmap(file);
+            bitmap.close();
+            const bytes = await toPngBytes(await fileBytes(file));
+            const { media, apply } = await saveMedia(env, project, bytes, { name: `${d.name} portrait`, role: 'avatar', mime: 'image/png' });
+            if (store.get().id !== project.id || !findArtifact(store.get(), 'characters', ch.id)) return;
+            store.update(p => {
+                const current = findArtifact(p, 'characters', ch.id);
+                let next = editArtifactField(apply(p), 'characters', ch.id, 'avatarMediaId', media.id, { summary: 'Chose a portrait' });
+                return editArtifactField(next, 'characters', ch.id, 'links.media', [...new Set([...(current.links?.media ?? []), media.id])], { summary: 'Added portrait to gallery' });
+            }, 'upload portrait', { merge: false });
+            env.toast('Portrait added. Previous pictures stay in the gallery. Ctrl+Z undoes this.', 'ok');
+        } catch (e) { env.toast(`Could not add that picture: ${e.message}`, 'error', 7000); }
+        finally { setBusy(''); }
+    };
 
     const writePrompts = async () => {
         const r = await ai.run('media.prompts', { card: ch.card, style, promptStyle });
@@ -643,6 +658,11 @@ function ImagesTab({ store, env, project, ch }) {
     const shownMood = spriteOf(mood) ? mood : figure ? (spriteOf('neutral') ? 'neutral' : Object.keys(sprites)[0]) : '';
     const backdrop = !scene && figure ? (ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null) ?? gallery[0] ?? null : null;
     return html`
+        <div class="cs-portrait-start">
+            ${avatarPic ? html`<img src=${avatarPic.url} alt=${`${d.name}'s portrait`} />` : html`<div class="cs-portrait-placeholder"><${Icon} name="user" /></div>`}
+            <div><strong>${avatarPic ? 'Your character’s portrait' : 'Start with a portrait'}</strong><p>Upload a picture you like, or write image prompts below to generate one. This becomes the picture on your exported card.</p>
+                <${Button} icon="file-image" label=${avatarPic ? 'Replace portrait…' : 'Upload portrait…'} onClick=${uploadPortrait} disabled=${!!busy} /></div>
+        </div>
         ${(scene || figure) && html`<div class=${cx('cs-stage', backdrop && 'has-backdrop', shownMood && `cs-mood-${MOOD_FAMILY[shownMood] ?? 'plain'}`)} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the painted scene' : ''}`}>
             ${backdrop && html`<div class="cs-stage-backdrop" style=${`background-image:url("${backdrop.url}")`}></div><div class="cs-stage-light"></div>`}
             ${shownMood && html`<div class="cs-stage-tint" aria-hidden="true"></div><div class="cs-stage-title" key=${shownMood} aria-hidden="true">${shownMood}</div>`}
@@ -678,6 +698,7 @@ function ImagesTab({ store, env, project, ch }) {
                 <a href=${m.url} target="_blank" rel="noopener"><img src=${m.url} alt=${m.name} title=${m.prompt ?? m.name} loading="lazy" /></a>
                 <figcaption>${m.purpose ?? ''}
                     ${m.id !== ch.avatarMediaId ? html`<${Button} small label="Use as avatar" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'avatarMediaId', m.id, { summary: 'Set avatar image' }), 'set avatar')} />` : html`<${Badge} kind="ok">avatar</${Badge}>`}
+                    <${Button} small icon="image" label="View / remove" onClick=${() => navigateStudio({ area: 'media', selection: { type: 'media', id: m.id } })} />
                 </figcaption>
             </figure>`)}</div>
         </${Section}>`}
@@ -855,8 +876,12 @@ function PublishTab({ store, env, project, ch, d }) {
         } catch (e) { env.toast(`Create failed: ${e.message}`, 'error', 8000); } finally { setBusy(''); }
     };
     return html`
-        <${Section} title="Export files">
-            <table class="cs-table"><tbody>${EXPORT_KINDS.map(k => html`<tr key=${k.id}>
+        <div class="cs-next-step"><div><strong>Download a character card</strong><p>PNG works with SillyTavern and includes the portrait and character text. Choose CHARX to include extra assets and expressions.</p></div><div class="cs-row">
+            <${Button} kind="primary" icon="download" label="Download PNG card" onClick=${() => doExport('png-st')} disabled=${!!busy} />
+            <${Button} icon="box-archive" label="Download CHARX" onClick=${() => doExport('charx')} disabled=${!!busy} />
+        </div></div>
+        <${Section} title="Other export formats" open=${false}>
+            <table class="cs-table"><tbody>${EXPORT_KINDS.filter(k => !['png-st', 'charx'].includes(k.id)).map(k => html`<tr key=${k.id}>
                 <td style="width:260px"><${Button} small icon="download" label=${k.label} onClick=${() => doExport(k.id)} disabled=${!!busy} /></td>
                 <td class="cs-small cs-muted">${k.hint}</td></tr>`)}</tbody></table>
         </${Section}>

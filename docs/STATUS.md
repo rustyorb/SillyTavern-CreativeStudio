@@ -1,4 +1,21 @@
-# Status — Creative Studio 0.2.1 for SillyTavern 1.19.0
+# Status — Creative Studio 0.3.0 for SillyTavern 1.19.0
+
+## 0.3 usability update
+
+- Home now offers four clear starts and a visual character library with next-step guidance. Empty sidebar categories are hidden until requested.
+- Everyday navigation is Home, Characters, World, Pictures and Try a conversation. Presets, regex and Quick Replies remain under Advanced tools.
+- Character editing has six everyday tabs, a basics checklist, one consistent Ask AI entry point, and an expandable set of advanced tabs. Credit/version fields and bulk generation controls no longer dominate the writing view.
+- Pictures has a searchable project gallery, expression/unused filters, usage details and undoable removal. A character’s Pictures tab now supports uploading/replacing a portrait and opening gallery items for removal.
+- Generation offers three scopes and persists the idea, tone and chosen steps across navigation/reload. Export offers PNG and CHARX first, with other formats in an expandable section.
+- Searchable Help explains common tasks and opens the relevant screen without an AI request. Sections work from the keyboard, dialogs keep keyboard focus inside, and mobile has a reachable project library and wrapping navigation.
+- Advanced tools now expose labeled Delete controls in project/workshop lists and editors, distinguish whole sets/presets from individual buttons/prompts, and confirm the named project copy before removal. Deletion offers a visible Undo action; the top-bar Undo is labeled too. Built-in prompts explain how to disable them.
+- See [the short guide](QUICKSTART.md) for the updated workflow.
+
+Validated on 2026-10-18 against the local development SillyTavern at `127.0.0.1:8123`: 160 unit tests passed; the live integration suite reported 13 successful results (12 executed checks and its optional prompt-capture check skipped because no chat was open). Browser checks covered empty start, writing, generation draft persistence, portrait upload, card import/undo, picture removal/undo, PNG export round-trip, Help, advanced tools, review-plan opening and desktop/mobile layouts. No paid model requests or live image-generation calls were made for this update.
+
+The verification below records the earlier feature releases; provider and image-generation results are historical.
+
+Deletion follow-up (2026-10-18): 164 unit tests passed. Local Chromium checks at 1440×1000 and 390×844 verified cancel, keyboard dismissal, whole-set/preset removal, individual replies/custom prompts (including unused prompts), profile references, all three regex scopes, character-link restoration and protection against stale Undo notifications. Mobile testing found and fixed a clipped confirmation dialog. No relevant browser errors or warnings remained. Temporary test data was removed and the original local project restored; installed SillyTavern items were not changed.
 
 ## Verification summary
 
