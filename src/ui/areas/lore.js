@@ -73,6 +73,7 @@ function LoreHome({ store, env, project, select }) {
             <${Button} icon="plug" label="From SillyTavern…" onClick=${() => setStPicker(true)} />
         </div>
         <div class="cs-area-body">
+            <p class="cs-page-intro">Lorebooks hold the people, places and facts your character should remember. Start with a title, a few trigger words and the facts to recall. Link the book from your character’s World tab.</p>
             <${WorldDesigner} store=${store} env=${env} project=${project} select=${select} />
             <${Section} title=${`Lorebooks (${project.lorebooks.length})`}>
                 ${project.lorebooks.length ? html`<table class="cs-table"><thead><tr><th>Name</th><th>Entries</th><th>Linked to</th><th>Lint</th></tr></thead><tbody>
@@ -135,7 +136,7 @@ function WorldDesigner({ store, env, project, select }) {
         env.toast(`Created a lorebook with ${r.value.entries.length} entries${card ? ` linked to ${card.data.name}` : ''}`, 'ok');
         select('lorebooks', lbId);
     };
-    return html`<${Section} title="Design a world with AI" right=${html`<${CreationRoute} store=${store} project=${project} compact />`}>
+    return html`<${Section} title="Design a world with AI" open=${false} right=${html`<${CreationRoute} store=${store} project=${project} compact />`}>
         <${TextArea} label="World premise" value=${premise} onChange=${setPremise} rows=${3} stats=${false} placeholder="Setting, factions, conflicts, what the roleplay needs to know…" />
         <div class="cs-row">
             <select class="text_pole" style="width:auto" value=${charId} onChange=${e => setCharId(e.currentTarget.value)} aria-label="Base on character">
@@ -299,11 +300,11 @@ function EntryEditor({ store, env, project, lb, entry: e, setEntry, removeEntry,
             <${Button} small icon="trash" kind="danger" label="Delete" onClick=${() => removeEntry(e.uid)} />
         </div>
         <${TextInput} label="Title / memo" value=${e.comment} onChange=${v => set({ comment: v }, 'Title')} />
-        <div class="cs-grid">
-            <${TagsInput} label="Primary keys" items=${e.key} onChange=${v => set({ key: v }, 'Keys')} hint="Comma-separated. /pattern/flags = regex." />
+        <${TagsInput} label="Trigger words" items=${e.key} onChange=${v => set({ key: v }, 'Keys')} hint="Words that bring this entry into the conversation, separated by commas. For example: library, archive, Mara. Advanced: /pattern/flags for regex." />
+        <${Section} title="Extra matching conditions" open=${false}><div class="cs-grid">
             <${Select} label="Secondary logic" value=${e.selectiveLogic} options=${Object.entries(LOGIC_LABEL).map(([v, l]) => ({ value: v, label: l }))} onChange=${v => set({ selectiveLogic: Number(v) })} />
             <${TagsInput} label="Secondary keys" items=${e.keysecondary} onChange=${v => set({ keysecondary: v, selective: v.length > 0 || e.selective }, 'Secondary keys')} />
-        </div>
+        </div></${Section}>
         <div class="cs-row"><${Button} small kind="ai" icon="wand-magic-sparkles" label="Suggest keys" onClick=${suggestKeys} disabled=${ai.busy} /><${AiStatus} ai=${ai} /></div>
         ${regexNote.length > 0 && html`<div class="cs-small cs-muted">${regexNote.join(' · ')}</div>`}
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.key`} />
@@ -314,7 +315,7 @@ function EntryEditor({ store, env, project, lb, entry: e, setEntry, removeEntry,
             ${assist.status}
         </div>
         <${PendingFor} store=${store} project=${project} type="lorebooks" id=${lb.id} path=${`data.entries.${e.uid}.content`} />
-        <${Section} title="Placement">
+        <${Section} title="Placement in the AI prompt" open=${false}>
             <div class="cs-grid">
                 <${Select} label="Position" value=${e.position} options=${Object.entries(POSITION_LABEL).map(([v, l]) => ({ value: v, label: l }))} onChange=${v => set({ position: Number(v) }, 'Position')} />
                 <${NumberInput} label="Order" value=${e.order} onChange=${v => set({ order: v ?? 100 }, 'Order')} hint="Higher = placed later (closer to chat)." />

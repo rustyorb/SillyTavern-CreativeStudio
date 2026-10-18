@@ -1,5 +1,5 @@
 // One picture of the project: what it is, which characters show it, and removing it from every place at once.
-import { html, Button, Icon, Section } from '../kit.js';
+import { html, useState, Button, Icon, Section, Empty, cx } from '../kit.js';
 import { findArtifact, mediaUsage, unusedMedia, removeMedia } from '../../core/project.js';
 
 const HOW = { avatar: 'avatar', gallery: 'gallery picture' };
@@ -9,6 +9,31 @@ const ORIGIN = { avatar: 'Came with an imported card', generated: 'Painted in th
 export const usageLabel = u => (u.how === 'sprite' ? `sprite: ${u.label}` : u.how === 'asset' ? `CHARX file ${u.path}` : HOW[u.how]);
 
 const size = n => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round((n ?? 0) / 1024))} KB`);
+
+export function PicturesArea(props) {
+    const { project, selection, select, store, env } = props;
+    const [query, setQuery] = useState('');
+    const [filter, setFilter] = useState('all');
+    const unused = new Set(unusedMedia(project).map(m => m.id));
+    const pictures = project.media.filter(m => {
+        const uses = mediaUsage(project, m.id);
+        const match = `${m.name} ${uses.map(u => u.name).join(' ')}`.toLowerCase().includes(query.toLowerCase());
+        return match && (filter === 'all' || (filter === 'unused' ? unused.has(m.id) : uses.some(u => u.how === 'sprite')));
+    });
+    if (selection?.type === 'media' && findArtifact(project, 'media', selection.id)) return html`<${MediaView} ...${props} />`;
+    return html`<div class="cs-area-head"><h3><${Icon} name="images" /> Pictures</h3><div class="cs-spacer"></div>
+        <${Button} icon="broom" label=${`Remove unused (${unused.size})`} disabled=${!unused.size} onClick=${() => removeUnusedPictures(store, env)} /></div>
+        <div class="cs-area-body"><p class="cs-page-intro">Every picture in this project. Open one to see where it is used or remove it. To add a portrait or generate images, open a character’s Pictures tab.</p>
+            <div class="cs-picture-toolbar"><input class="text_pole" aria-label="Search pictures" placeholder="Find a picture or character…" value=${query} onInput=${e => setQuery(e.currentTarget.value)} />
+                <div class="cs-row" role="group" aria-label="Filter pictures">${[['all', 'All pictures'], ['sprites', 'Expressions'], ['unused', 'Unused']].map(([id, label]) => html`<button class=${cx('cs-btn', filter === id && 'cs-btn-primary')} aria-pressed=${filter === id} onClick=${() => setFilter(id)}>${label}</button>`)}</div>
+            </div>
+            <div class="cs-picture-grid">${pictures.map(m => html`<button key=${m.id} class="cs-picture-tile" onClick=${() => select('media', m.id)}>
+                ${m.kind === 'image' ? html`<img src=${m.url} alt="" loading="lazy" />` : html`<div class="cs-picture-file"><${Icon} name="file" /></div>`}
+                <strong>${m.name}</strong><span>${unused.has(m.id) ? 'Unused' : [...new Set(mediaUsage(project, m.id).map(u => u.name))].join(', ')}</span>
+            </button>`)}</div>
+            ${!pictures.length && html`<${Empty} icon="image" title=${project.media.length ? 'No pictures match' : 'Your picture collection starts with a character'}>${project.media.length ? 'Try another search or choose All pictures.' : 'Import a card with an avatar, or open a character to add pictures.'}<div class="cs-row"><${Button} label="Open characters" onClick=${() => { props.setSelection(null); props.setArea('characters'); }} /></div></${Empty}>`}
+        </div>`;
+}
 
 /** Remove every picture no character uses, as one undo step. */
 export async function removeUnusedPictures(store, env) {
@@ -21,7 +46,7 @@ export async function removeUnusedPictures(store, env) {
     env.toast(`Removed ${n}. Ctrl+Z brings them back.`, 'ok', 5000);
 }
 
-export function MediaView({ store, env, project, selection, setSelection, select }) {
+export function MediaView({ store, env, project, selection, setSelection, select, setArea }) {
     const m = findArtifact(project, 'media', selection.id); // the Characters area only shows this view while it exists
     const uses = mediaUsage(project, m.id);
     const others = unusedMedia(project).filter(x => x.id !== m.id);
@@ -34,6 +59,7 @@ export function MediaView({ store, env, project, selection, setSelection, select
         env.toast(`Removed ${m.name}. Ctrl+Z brings it back.`, 'ok', 5000);
     };
     return html`<div class="cs-area-head">
+            <${Button} small icon="arrow-left" label="All pictures" onClick=${() => { setSelection(null); setArea('media'); }} />
             <h3><${Icon} name=${m.kind === 'image' ? 'image' : 'file'} /> ${m.name}</h3>
             <div class="cs-spacer"></div>
             <${Button} icon="trash" kind="danger" label="Remove from project" onClick=${remove} />

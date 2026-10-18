@@ -43,7 +43,7 @@ export function Icon({ name, title }) {
 
 export function Button({ icon, label, title, onClick, kind = '', disabled, small, type = 'button', ariaPressed }) {
     return html`<button type=${type} class=${cx('cs-btn', kind && `cs-btn-${kind}`, small && 'cs-btn-sm')} title=${title ?? label}
-        aria-pressed=${ariaPressed} disabled=${disabled} onClick=${onClick}>
+        aria-label=${!label ? title : undefined} aria-pressed=${ariaPressed} disabled=${disabled} onClick=${onClick}>
         ${icon && html`<${Icon} name=${icon} />`}${label && html`<span>${label}</span>`}
     </button>`;
 }
@@ -215,9 +215,9 @@ export function Diagnostics({ items, onPick }) {
 export function Section({ title, children, open: initial = true, right, id }) {
     const [open, setOpen] = useState(initial);
     return html`<section class="cs-section" id=${id}>
-        <header class="cs-section-head" onClick=${() => setOpen(!open)}>
-            <${Icon} name=${open ? 'chevron-down' : 'chevron-right'} /><h4>${title}</h4>
-            <div class="cs-section-right" onClick=${e => e.stopPropagation()}>${right}</div>
+        <header class="cs-section-head">
+            <button class="cs-section-toggle" aria-expanded=${open} onClick=${() => setOpen(!open)}><${Icon} name=${open ? 'chevron-down' : 'chevron-right'} /><span>${title}</span></button>
+            <div class="cs-section-right">${right}</div>
         </header>
         ${open && html`<div class="cs-section-body">${children}</div>`}
     </section>`;
@@ -232,7 +232,16 @@ export function Modal({ title, onClose, children, footer, wide }) {
         return () => prev?.focus?.();
     }, []);
     return html`<div class="cs-modal-backdrop" onMouseDown=${e => e.target === e.currentTarget && onClose()}
-        onKeyDown=${e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}>
+        onKeyDown=${e => {
+            if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+            if (e.key === 'Tab') {
+                const items = [...(ref.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex="0"]') ?? [])].filter(el => el.getClientRects().length);
+                const first = items[0];
+                const last = items.at(-1);
+                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+            }
+        }}>
         <div class="cs-modal" role="dialog" aria-modal="true" aria-label=${title} ref=${ref} style=${wide ? 'width:min(1200px,100%)' : ''}>
             <div class="cs-modal-head"><h3>${title}</h3><${Button} small icon="xmark" title="Close (Esc)" onClick=${onClose} /></div>
             <div class="cs-modal-body">${children}</div>

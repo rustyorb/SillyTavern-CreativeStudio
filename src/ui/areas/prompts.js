@@ -6,7 +6,8 @@ import {
 } from '../kit.js';
 import { useAiTask, AiStatus, CreationRoute } from '../ai.js';
 import { pushProposals } from '../proposals.js';
-import { findArtifact, editArtifactField, upsertArtifact, removeArtifact, logHistory, acceptProposal, rejectProposal } from '../../core/project.js';
+import { findArtifact, editArtifactField, upsertArtifact, logHistory, acceptProposal, rejectProposal } from '../../core/project.js';
+import { DeleteButton, DeleteArtifactButton, deleteWithUndo } from '../deletion.js';
 import {
     KINDS, MARKERS, detectKind, splitMaster, normalizeCc, ccOrder, setCcOrder, newCustomPrompt, markerKind, lintCc, assembleCc,
     sceneFromCard, diffCc, emptyCcPreset, stripSensitive, INSTRUCT_DEFAULT, CONTEXT_DEFAULT, SYSPROMPT_DEFAULT, REASONING_DEFAULT, TRIGGERS,
@@ -77,11 +78,12 @@ function PromptsHome(props) {
         <div class="cs-area-body">
             <div class="cs-muted cs-small">Chat Completion presets carry the Prompt Manager (prompts, order, injections) plus samplers. Text Completion setups combine a sampler preset with instruct, context (story string) and system-prompt templates. Connection profiles only <em>select</em> presets by name.</div>
             ${byKind.map(({ k, list }) => html`<${Section} key=${k} title=${`${KINDS[k].label} (${list.length})`} open=${list.length > 0}>
-                ${list.length ? html`<ul class="cs-list">${list.map(p => html`<li key=${p.id} class="cs-list-item" onClick=${() => select('presets', p.id)}>
-                    <${Icon} name=${KINDS[k].icon} /><span class="cs-grow">${p.name}</span>
+                ${list.length ? html`<ul class="cs-list">${list.map(p => html`<li key=${p.id} class="cs-list-item cs-removable-row">
+                    <button class="cs-item-open" onClick=${() => select('presets', p.id)}><${Icon} name=${KINDS[k].icon} /><span>${p.name}</span></button>
                     ${k === 'cc' && html`<span class="cs-muted cs-small">${(p.data.prompts ?? []).length} prompts · ${ccOrder(p.data).filter(o => o.enabled).length} enabled${p.data.extensions?.regex_scripts?.length ? ` · ${p.data.extensions.regex_scripts.length} regex` : ''}</span>`}
                     ${p.origin?.kind === 'st' && html`<${Badge} kind="accent">ST</${Badge}>`}
                     ${(p.versions?.length ?? 0) > 0 && html`<${Badge}>${p.versions.length} versions</${Badge}>`}
+                    <${DeleteArtifactButton} store=${store} env=${env} type="presets" item=${p} onRestored=${() => select('presets', p.id)} />
                 </li>`)}</ul>` : html`<div class="cs-muted cs-small">None.</div>`}
             </${Section}>`)}
             <${ProfilesSection} ...${props} />
@@ -200,6 +202,10 @@ function ProfilesSection({ store, env, project, select }) {
     };
     return html`<${Section} title=${`Connection profiles (${project.connectionProfiles.length} in project · ${st.length} in SillyTavern)`}>
         <div class="cs-muted cs-small">A profile stores the API, model and the <em>names</em> of the presets/templates it selects — not their contents. The project keeps a reference copy (secrets are never copied) so a playtest can record exactly which configuration was used.</div>
+        <ul class="cs-list" aria-label="Project profile references">${project.connectionProfiles.map(cp => html`<li class="cs-list-item cs-removable-row" key=${cp.id}>
+            <button class="cs-item-open" onClick=${() => select('connectionProfiles', cp.id)}><${Icon} name="plug" /><span>${cp.name}</span></button>
+            <${DeleteArtifactButton} store=${store} env=${env} type="connectionProfiles" item=${cp} onRestored=${() => select('connectionProfiles', cp.id)} />
+        </li>`)}</ul>
         <table class="cs-table"><thead><tr><th>Profile</th><th>Mode</th><th>API / model</th><th>Selects</th><th></th></tr></thead><tbody>
             ${st.map(pf => {
                 const inProj = project.connectionProfiles.some(c => c.origin?.id === pf.id);
@@ -226,12 +232,12 @@ function profileSelections(pf, project) {
     return rows;
 }
 
-function ProfilesView({ project, selection, store }) {
+function ProfilesView({ project, selection, store, env, setSelection, select }) {
     const cp = findArtifact(project, 'connectionProfiles', selection.id);
     if (!cp) return html`<${Empty} title="Profile not found" />`;
     const sel = profileSelections(cp.data, project);
     return html`<div class="cs-area-head"><h3><${Icon} name="plug" /> ${cp.name}</h3><div class="cs-spacer"></div>
-            <${Button} small icon="trash" kind="danger" label="Remove reference" onClick=${() => store.update(p => removeArtifact(p, 'connectionProfiles', cp.id, { summary: `Removed profile ${cp.name}` }), 'remove profile')} /></div>
+            <${DeleteArtifactButton} store=${store} env=${env} type="connectionProfiles" item=${cp} label="Delete reference" onDeleted=${() => setSelection(null)} onRestored=${() => select('connectionProfiles', cp.id)} /></div>
         <div class="cs-area-body">
             <div class="cs-muted cs-small">Reference copy of a SillyTavern connection profile. It selects the following by name:</div>
             <table class="cs-table"><tbody>${sel.map(s => html`<tr><td>${s.label}</td><td><strong>${s.value}</strong></td><td>${s.inProject ? html`<${Badge} kind="ok">content is in this project</${Badge}>` : html`<${Badge}>not in project</${Badge}>`}</td></tr>`)}</tbody></table>
@@ -262,11 +268,6 @@ function PresetEditor(props) {
             { id: 'versions', label: 'Versions & compare', icon: 'code-compare', badge: pr.versions?.length || undefined },
             { id: 'publish', label: 'Export & SillyTavern', icon: 'upload' },
         ];
-    const remove = async () => {
-        if (!(await env.confirm(`Remove ${pr.name} from the project?`, 'Nothing in SillyTavern is deleted. Undo with Ctrl+Z.'))) return;
-        store.update(p => removeArtifact(p, 'presets', pr.id, { summary: `Removed preset ${pr.name}` }), 'remove preset');
-        setSelection(null);
-    };
     const ep = { ...props, setData, lint };
     return html`<div class="cs-area-head">
             <h3><${Icon} name=${KINDS[pr.kind].icon} /></h3>
@@ -279,7 +280,7 @@ function PresetEditor(props) {
                 const label = await env.prompt('Version label', `v${(pr.versions?.length ?? 0) + 1}`);
                 if (label) store.update(p => editArtifactField(p, 'presets', pr.id, 'versions', [...(pr.versions ?? []), { id: uid('ver'), label, time: new Date().toISOString(), data: clone(pr.data) }].slice(-50), { summary: `Saved version ${label}` }), 'save version');
             }} />
-            <${Button} small icon="trash" kind="danger" title="Remove from project" onClick=${remove} />
+            <${DeleteArtifactButton} store=${store} env=${env} type="presets" item=${pr} label="Delete preset" onDeleted=${() => setSelection(null)} onRestored=${() => props.select('presets', pr.id)} />
         </div>
         <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
         <div class="cs-area-body">
@@ -379,7 +380,7 @@ function PromptManager({ store, env, pr, setData, lint }) {
                 const label = p?.name ?? o.identifier;
                 if (q && !`${label} ${p?.content ?? ''}`.toLowerCase().includes(q.toLowerCase())) return null;
                 if (!showOff && !o.enabled) return null;
-                return html`<li key=${o.identifier} class=${cx('cs-list-item', sel === o.identifier && 'active', !o.enabled && 'disabled')} onClick=${() => setSel(o.identifier)}
+                return html`<li key=${o.identifier} class=${cx('cs-list-item cs-removable-row', sel === o.identifier && 'active', !o.enabled && 'disabled')} onClick=${() => setSel(o.identifier)}
                     style=${kind === 'divider' ? 'font-weight:600;border-top:1px solid var(--cs-line);margin-top:4px' : ''}>
                     <input type="checkbox" checked=${o.enabled} aria-label=${`Enable ${label}`} onClick=${e => e.stopPropagation()} onChange=${() => toggle(o.identifier)} />
                     <${Icon} name=${kind === 'marker' ? 'thumbtack' : kind === 'divider' ? 'grip-lines' : kind === 'missing' ? 'circle-question' : p.injection_position === 1 ? 'syringe' : 'align-left'} />
@@ -391,17 +392,32 @@ function PromptManager({ store, env, pr, setData, lint }) {
                         <button class="cs-btn cs-btn-sm" title="Move up" aria-label="Move up" onClick=${e => { e.stopPropagation(); move(i, -1); }}>↑</button>
                         <button class="cs-btn cs-btn-sm" title="Move down" aria-label="Move down" onClick=${e => { e.stopPropagation(); move(i, 1); }}>↓</button>
                     </span>
+                    ${p && kind !== 'marker' && !p.system_prompt && html`<${DeletePromptButton} store=${store} env=${env} pr=${pr} prompt=${p} setSel=${setSel} />`}
                 </li>`;
             })}</ul>
             ${orphans.length > 0 && html`<${Section} title=${`Not in order (${orphans.length})`} open=${false}>
-                ${orphans.map(p => html`<div class="cs-list-item" key=${p.identifier}><span class="cs-grow">${p.name}</span><${Button} small label="Add to order" onClick=${() => setOrder([...order, { identifier: p.identifier, enabled: true }], 'Added to order')} /></div>`)}
+                ${orphans.map(p => html`<div class="cs-list-item cs-removable-row" key=${p.identifier}><span class="cs-grow">${p.name}</span><${Button} small label="Add to order" onClick=${() => setOrder([...order, { identifier: p.identifier, enabled: true }], 'Added to order')} />
+                    ${markerKind(p) !== 'marker' && !p.system_prompt && html`<${DeletePromptButton} store=${store} env=${env} pr=${pr} prompt=${p} setSel=${setSel} />`}</div>`)}
             </${Section}>`}
         </div>
         <div>${sel && byId.get(sel) ? html`<${PromptEditor} store=${store} env=${env} pr=${pr} data=${data} prompt=${byId.get(sel)} setData=${setData} order=${order} setSel=${setSel} />` : html`<${Empty} title="Select a prompt" />`}</div>
     </div>`;
 }
 
-function PromptEditor({ env, data, prompt: p, setData, order, setSel }) {
+function DeletePromptButton({ store, env, pr, prompt, setSel, label = 'Delete' }) {
+    return html`<${DeleteButton} name=${prompt.name} label=${label} detail=${`Only this prompt is removed from “${pr.name}”. The rest of the preset stays.`} onDelete=${() => {
+        const removed = deleteWithUndo(store, env, p => {
+            const current = findArtifact(p, 'presets', pr.id);
+            if (!current?.data.prompts.some(x => x.identifier === prompt.identifier)) return p;
+            const next = clone(current.data);
+            next.prompts = next.prompts.filter(x => x.identifier !== prompt.identifier);
+            return editArtifactField(p, 'presets', pr.id, 'data', setCcOrder(next, ccOrder(next).filter(o => o.identifier !== prompt.identifier)), { summary: `Deleted prompt ${prompt.name}` });
+        }, `Deleted prompt ${prompt.name}`, () => setSel(prompt.identifier));
+        if (removed) setSel(id => id === prompt.identifier ? null : id);
+    }} />`;
+}
+
+function PromptEditor({ store, env, pr, data, prompt: p, setData, order, setSel }) {
     const set = (patch, s = 'Edited prompt') => {
         const next = clone(data);
         const i = next.prompts.findIndex(x => x.identifier === p.identifier);
@@ -409,19 +425,15 @@ function PromptEditor({ env, data, prompt: p, setData, order, setSel }) {
         setData(next, `${s}: ${p.name}`);
     };
     const kind = markerKind(p);
-    const remove = () => {
-        const next = clone(data);
-        next.prompts = next.prompts.filter(x => x.identifier !== p.identifier);
-        setData(setCcOrder(next, order.filter(o => o.identifier !== p.identifier)), `Deleted prompt ${p.name}`);
-        setSel(order[0]?.identifier);
-    };
     if (kind === 'marker') {
         return html`<div class="cs-stack"><h4 style="margin:0"><${Icon} name="thumbtack" /> ${p.name}</h4>
-            <div class="cs-muted">Marker: SillyTavern fills this slot at generation time (${MARKERS[p.identifier]}). Its position in the order decides where that content goes.</div></div>`;
+            <div class="cs-muted">Marker: SillyTavern fills this slot at generation time (${MARKERS[p.identifier]}). Its position in the order decides where that content goes.</div>
+            <div class="cs-hint">To stop using this built-in slot, uncheck it in the prompt list. Built-in slots cannot be deleted.</div></div>`;
     }
     return html`<div class="cs-stack">
         <div class="cs-row-between"><strong>${kind === 'divider' ? 'Divider / section marker' : p.system_prompt ? 'Built-in prompt' : 'Custom prompt'}</strong>
-            ${!p.system_prompt && html`<${Button} small icon="trash" kind="danger" label="Delete" onClick=${remove} />`}</div>
+            ${!p.system_prompt && html`<${DeletePromptButton} store=${store} env=${env} pr=${pr} prompt=${p} setSel=${setSel} label="Delete prompt" />`}</div>
+        ${p.system_prompt && html`<div class="cs-hint">To stop using this built-in prompt, uncheck it in the prompt list. Built-in prompts cannot be deleted.</div>`}
         ${kind === 'divider' && html`<div class="cs-muted cs-small">This prompt is flagged as a marker but is not one of ST's marker slots; presets use these as section headers. ST sends nothing for it.</div>`}
         <div class="cs-grid">
             <${TextInput} label="Name" value=${p.name} onChange=${v => set({ name: v })} />

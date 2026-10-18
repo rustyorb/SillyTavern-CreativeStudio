@@ -121,8 +121,8 @@ export async function createEnvironment() {
             toastListeners.add(fn);
             return () => toastListeners.delete(fn);
         },
-        toast(text, kind = '', ms) {
-            toastListeners.forEach(l => l({ text, kind, ms }));
+        toast(text, kind = '', ms, action) {
+            toastListeners.forEach(l => l({ text, kind, ms, action }));
         },
         /** Text prompt using ST's popup (falls back to window.prompt). */
         async prompt(title, value = '') {
