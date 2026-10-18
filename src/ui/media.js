@@ -1,7 +1,8 @@
 // Media helpers (browser only): store images in project media, convert to PNG for card export.
 import { uid } from '../core/bytes.js';
 import { isPng } from '../core/png.js';
-import { upsertArtifact } from '../core/project.js';
+import { upsertArtifact, editArtifactField, setSprite } from '../core/project.js';
+import { pictureTarget } from '../core/pictures.js';
 
 const EXT_BY_MIME = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif' };
 
@@ -41,4 +42,23 @@ export async function saveMedia(env, project, bytes, { name = 'image', role = 'i
 
 export async function mediaBytes(env, media) {
     return env.storage.loadMediaBytes(media.url);
+}
+
+/** Keep async image results attached to their original project and character, including during file saves. */
+export async function saveCharacterPicture(env, store, projectId, characterId, bytes, { purpose, prompt, seed, label } = {}) {
+    const character = pictureTarget(store.get(), projectId, characterId);
+    const { media, apply } = await saveMedia(env, store.get(), bytes, {
+        name: `${character.card.data.name} — ${label ?? purpose}`, role: label ? 'sprite' : 'generated',
+    });
+    Object.assign(media, { purpose, prompt, seed, ...(label ? { label } : {}) });
+    pictureTarget(store.get(), projectId, characterId);
+    store.update(p => {
+        const current = pictureTarget(p, projectId, characterId);
+        let next = apply(p);
+        if (label) return setSprite(next, characterId, label, media.id, { actor: 'ai', summary: `Generated ${label} expression` });
+        next = editArtifactField(next, 'characters', characterId, 'links.media', [...new Set([...(current.links?.media ?? []), media.id])], { actor: 'ai', summary: `Generated ${purpose}` });
+        if (/avatar|portrait/i.test(purpose) && !current.avatarMediaId) next = editArtifactField(next, 'characters', characterId, 'avatarMediaId', media.id, { actor: 'ai', summary: 'First generated portrait set as avatar' });
+        return next;
+    }, label ? 'generate expression' : 'generate picture', { merge: false });
+    return media;
 }

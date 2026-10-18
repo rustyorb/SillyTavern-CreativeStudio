@@ -5,7 +5,7 @@
 - Home now offers four clear starts and a visual character library with next-step guidance. Empty sidebar categories are hidden until requested.
 - Everyday navigation is Home, Characters, World, Pictures and Try a conversation. Presets, regex and Quick Replies remain under Advanced tools.
 - Character editing has six everyday tabs, a basics checklist, one consistent Ask AI entry point, and an expandable set of advanced tabs. Credit/version fields and bulk generation controls no longer dominate the writing view.
-- Pictures has a searchable project gallery, expression/unused filters, usage details and undoable removal. A character’s Pictures tab now supports uploading/replacing a portrait and opening gallery items for removal.
+- Pictures follows the working character. Both entry points share an editable prompt, optional prompt-writing help, a visible Generate picture button, direct image settings, portrait upload, a character gallery and expression controls. Project picture library provides the separate project-wide search, expression/unused filters, usage details and undoable removal.
 - Generation offers three scopes and persists the idea, tone and chosen steps across navigation/reload. Export offers PNG and CHARX first, with other formats in an expandable section.
 - Searchable Help explains common tasks and opens the relevant screen without an AI request. Sections work from the keyboard, dialogs keep keyboard focus inside, and mobile has a reachable project library and wrapping navigation.
 - Advanced tools now expose labeled Delete controls in project/workshop lists and editors, distinguish whole sets/presets from individual buttons/prompts, and confirm the named project copy before removal. Deletion offers a visible Undo action; the top-bar Undo is labeled too. Built-in prompts explain how to disable them.
@@ -18,6 +18,8 @@ The verification below records the earlier feature releases; provider and image-
 Deletion follow-up (2026-10-18): 164 unit tests passed. Local Chromium checks at 1440×1000 and 390×844 verified cancel, keyboard dismissal, whole-set/preset removal, individual replies/custom prompts (including unused prompts), profile references, all three regex scopes, character-link restoration and protection against stale Undo notifications. Mobile testing found and fixed a clipped confirmation dialog. No relevant browser errors or warnings remained. Temporary test data was removed and the original local project restored; installed SillyTavern items were not changed.
 
 ## Verification summary
+
+Pictures follow-up (2026-10-18): 170 unit tests passed, including character ownership, saved drafts, late results after switching characters/projects, deletion during a save, and Undo. Local Chromium at 1440×1000 and 390×844 verified both Pictures entry points, context retention across Home and the project library, isolated drafts, prompt help filling the editable box, direct image settings, generation/save/display, missing-generator guidance and error recovery. Text-model and ComfyUI responses were mocked; image storage used the real local SillyTavern endpoint. No paid generation or live GPU request was made. No browser exceptions occurred. Temporary test data was removed and the original project restored.
 
 | Suite | Result | What it covers |
 |---|---|---|

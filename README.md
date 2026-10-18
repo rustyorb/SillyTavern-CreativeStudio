@@ -21,7 +21,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-164%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-170%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -107,10 +107,10 @@ details when you need them, then use **Export & use** to download a card or send
 | Improve a character already in SillyTavern | **Home → From SillyTavern**, or the feather in ST's character panel |
 | Generate from an idea | **Home → Generate with AI**; choose **Character & openings**, **Character & world**, or **Complete toolkit** |
 | Write or revise a field with AI | **Ask AI** beside the field; enter your direction and choose **Add to it**, **Rewrite**, or **3 takes** |
-| Upload a portrait or generate pictures | Open a character → **Pictures**; use **Upload portrait…**, or **Write image prompts** followed by **Paint** / **Paint all** |
+| Upload a portrait or generate pictures | Open a character → **Pictures**. Write a **Picture prompt** (or use **Help write prompt**) and press **Generate picture**. **Upload portrait…** adds an existing image. |
 | Make expression sprites | Open a character → **Pictures → Expression sprites**; this needs ComfyUI |
 | Set up an image generator | **AI setup → Images**; select ComfyUI or SillyTavern Image Generation |
-| Browse or clean up project images | The main **Pictures** page; this is the gallery, while generation is inside a character's Pictures tab |
+| Browse or clean up project images | **Pictures → Project picture library** shows every character's images; normal **Pictures** stays with the character you are working on |
 | Edit a lorebook | **World** |
 | Edit presets, regex or STscript | **Advanced tools → Writing presets**, **Text cleanup** (regex), or **Quick Replies** (includes STscript) |
 | Edit the studio's AI instructions | **Advanced tools → AI instructions** |
@@ -129,7 +129,8 @@ explains what is included. Built-in prompt slots can be disabled with their chec
 
 These actions remove the **project copy**; they do not delete installed SillyTavern items. Choose **Undo** in the
 notification to restore the deletion. The top-bar **Undo** remains available after the notification closes.
-Undo history is for the current open project session; use snapshots or a project bundle for longer-term backups.
+Undo history is for the current open project session; snapshots and project bundles preserve project data for
+longer-term recovery. They still reference media files stored in SillyTavern: back up those files separately too.
 
 For a short walkthrough, see **[the quick-start guide](docs/QUICKSTART.md)**.
 
@@ -266,8 +267,15 @@ A taste of the first message:
 <br />
 
 Connect **ComfyUI** through **AI setup → Images → ComfyUI → your address → Connect**, then choose a checkpoint.
-Open a character's **Pictures** tab to write image prompts, paint pictures or make **Expression sprites**.
-The main **Pictures** page is the project gallery.
+Open a character, then **Pictures**. The main navigation and the character's Pictures tab open the same workspace,
+locked to the character you last opened. Its name stays visible, and its prompt draft follows it across pages.
+Choose **Picture type**, write a **Picture prompt**, and press **Generate picture**. **Help write prompt** is an
+optional writing step beside the same prompt box; it does not generate an image. **Image settings** opens the
+image generator settings directly. If no generator is configured, the Generate button remains visible with setup guidance.
+
+Upload an existing portrait with **Upload portrait…**, or expand **Expression sprites** for **Generate expressions**.
+The first generated portrait becomes the avatar if the character has none. Further pictures appear in that character's
+gallery. **Project picture library** is the separate view of all project images, including unused files.
 **You never touch a workflow:** the studio builds them in code.
 
 - **Portraits, full body and scenes.** The AI writes the prompts in the style your checkpoint wants: score tags for
@@ -381,7 +389,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 <tr>
 <td valign="top">
 <img src="docs/assets/shots/stage.webp" alt="Images tab: the character's transparent joy sprite standing inside the painted workshop scene, above the prompts" />
-<b>Character → Pictures</b>: upload a portrait, write image prompts and use <i>Paint all</i>. The stage shows the character in a painted scene; click a mood to swap the expression.
+<b>Character → Pictures</b>: the earlier screenshot shows the stage. The current page starts with an editable prompt and <i>Generate picture</i>; the stage is inside <i>Expression sprites</i>.
 </td>
 <td valign="top">
 <img src="docs/assets/shots/sprites.webp" alt="Eight expression sprites on a transparency checkerboard with Paint missing, New face and Install in SillyTavern" />
@@ -414,7 +422,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 | **Advanced tools → Text cleanup** | One-click recipes; global, preset-scoped and character-scoped scripts in engine order; **stage preview** (saved text, display, prompt, edit, World Info, reasoning) with fixtures, in a worker with a timeout; lint; order-sensitivity detection; direct-edit mode adds only scripts that pass their own tests |
 | **Advanced tools → Quick Replies / STscript** | Story-tool recipes; every v2 option; source editor + readable outline; syntax check with **SillyTavern's real parser**; argument checks from the live command registry; effects and dependency panel; command reference; reviewed test run; live install through Quick Reply's own importer |
 | **Try a conversation** | Sandbox runs built from project artifacts through any connection profile; AI-played user turns; *Invent 3* test scenarios; the exact prompt of each reply; capture of the live ST chat with its active configuration; ratings, notes and side-by-side comparison. Every run records model, profile, preset hash, card hash, activated lore and regex |
-| **Pictures** | Search all project images; filter expressions or unused pictures; inspect usage and remove images with Undo. Generate pictures and expressions from a character’s Pictures tab. |
+| **Pictures** | Follows the working character. Edit a saved prompt, optionally ask AI to draft it, then **Generate picture**. Upload a portrait, browse that character's gallery, or expand **Expression sprites**. **Project picture library** searches all project images, filters expressions or unused pictures, and offers usage details and removal with Undo. |
 | **Inspector** | Pending proposals, provenance history, snapshots, live-SillyTavern backups with restore |
 
 </details>
@@ -437,10 +445,10 @@ can chat, the studio can create.
   round trip. Your chat connection stays untouched.
 - **Local models:** they work. Bigger instruct models with solid JSON do much better, and on CPU a full run takes a while.
 
-> 🔒 **Your keys stay in SillyTavern's vault.** A key you add here goes straight into SillyTavern's own secret store
-> (the same place as every other key, never saved in project exports or extension settings). The studio saves a normal
-> *Connection Manager* profile that refers to the key by id, and SillyTavern's active key for your chat is left as it
-> was. The studio never reads a key back, and exports strip secrets.
+> 🔒 **Keys entered through the provider form go to SillyTavern's vault.** The studio stores a normal
+> *Connection Manager* profile referring to that key by id, rather than copying the key into the project.
+> SillyTavern's active chat key is preserved. Project bundles can contain imported connection-profile fields,
+> including custom URLs: do not put credentials in URLs, and inspect those fields before sharing a bundle.
 
 **Earlier end-to-end runs:** DeepSeek V3.1 via OpenRouter (full roleplay in about five minutes), and a local qwen3 8B
 through Ollama (slow on CPU, but complete). The 0.3 usability checks did not make paid model or image-generation
@@ -469,8 +477,9 @@ requests; see [verification details](docs/STATUS.md).
 <summary><b>Where did STscript, image generation and expressions go?</b></summary>
 <br />
 They are still included. <b>Advanced tools → Quick Replies</b> opens the Quick Reply and STscript workshop.
-For pictures and expressions, open a character and choose <b>Pictures</b>; expand <b>Expression sprites</b> for
-moods. Configure the image generator under <b>AI setup → Images</b>. The main <b>Pictures</b> page is the gallery.
+For pictures and expressions, open a character and choose <b>Pictures</b>. The main <b>Pictures</b> button follows
+that same character. Write a prompt and press <b>Generate picture</b>; expand <b>Expression sprites</b> for moods.
+<b>Image settings</b> opens the generator configuration. <b>Project picture library</b> shows all project images.
 </details>
 
 <details>
@@ -524,7 +533,7 @@ takes its place.
 <details>
 <summary><b>How do I get rid of pictures I don't need?</b></summary>
 <br />
-Open the main <b>Pictures</b> page, then click a picture to see which characters use it. <b>Remove from project</b>
+Open <b>Pictures → Project picture library</b>, then click a picture to see which characters use it. <b>Remove from project</b>
 removes it and clears its project references. The <b>Unused</b> filter finds pictures no character uses;
 <b>Remove unused</b> offers to clear them together. Removing a character also removes pictures only it used.
 Use the top-bar <b>Undo</b> to restore a removal.
@@ -559,8 +568,11 @@ About a dozen: one per step, plus the occasional retry or repair. With a fast cl
 <br />
 In your SillyTavern user files (<code>data/&lt;user&gt;/user/files/cstudio-*.json</code>), saved automatically, with media
 next to them. They follow you across browsers on the same SillyTavern. Under <b>Home → Project details &amp; notes</b>,
-<b>Download project bundle…</b> makes a portable zip and <b>Open project or bundle…</b> imports one. Autosave saves
-your Studio project; it does not apply its changes to your SillyTavern chat.
+<b>Download project bundle…</b> exports project data and ST-native files; <b>Open project or bundle…</b> imports one.
+The bundle is not a complete portable media backup: the project JSON retains media URLs, and not every gallery
+image or expression is embedded or remapped. Back up the SillyTavern media files too when moving installations.
+Individual PNG cards embed their avatar, and CHARX exports can carry their packaged assets. Autosave saves your
+Studio project; it does not apply its changes to your SillyTavern chat.
 </details>
 
 <details>
@@ -589,7 +601,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-164 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+170 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline, workflow guidance, draft persistence, and deletion/Undo behavior. A live suite runs inside a
 SillyTavern tab against its server and creates then removes `CSTEST_*` items. Run it on a separate local test

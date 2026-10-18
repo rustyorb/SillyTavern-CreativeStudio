@@ -30,7 +30,7 @@ export const TAB_HELP = {
     core: 'Start with who they are and the situation you want to play. You can write yourself or ask AI beside any field.',
     greetings: 'The opening is the first message your character sends. Write one strong start; alternate openings are optional.',
     examples: 'Show how your character speaks. A few short exchanges help establish their voice.',
-    images: 'Choose a portrait first. Then add scenes, full-body pictures and expressions if you want them.',
+    images: 'Pictures stay with this character. Write a prompt and generate a picture here, or upload a portrait you already have.',
     lore: 'Add places, people and facts the AI should remember. A lorebook is optional for a simple character.',
     publish: 'Download a portable card or review changes before sending this character to SillyTavern.',
 };
