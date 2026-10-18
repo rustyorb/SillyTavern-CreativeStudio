@@ -415,7 +415,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 
 | Area | What you can do |
 |---|---|
-| **Home** | Import, bring in, write or generate a character; choose generation scope; review project checks and links. **Project details & notes → Download project bundle…** exports ST-native files plus a re-importable project. **Use in SillyTavern…** opens the application plan with backups. |
+| **Home** | Import, bring in, write or generate a character; choose generation scope; review project checks and links. **Project details & notes → Download project bundle…** exports ST-native files plus a re-importable project. **Use in SillyTavern…** opens the application plan; supported updates record live backups. |
 | **Characters** | Write, Openings, Voice, Pictures, World and Export & use; a basics checklist; **Ask AI** for additive edits, rewrites or three takes; **Build the rest for me** and **Critique & fix**. Advanced tabs retain the full V3 fields, embedded lore, metadata, assets, extensions and compatibility checks. Import PNG/CHARX/JSON; upload a portrait; export PNG, CHARX or JSON; create or update a SillyTavern character with linked lore. |
 | **World** | Build linked lorebooks; steer entry content with **Ask AI**; entry controls, checks and **activation preview**; extraction from text or chat; contradiction and gap audit; trigger-word suggestions. |
 | **Advanced tools → Writing presets** | Generate a preset from goals or from the project; Chat Completion Prompt Manager editor (order, enable, roles, relative/in-chat depth, triggers, forbid overrides, divider markers used by large community presets); samplers and formatting; assembled-prompt preview with token counts from ST's tokenizer; **live dry run**; AI critique; versions and compare; Text Completion instruct/context/system-prompt/reasoning templates rendered by **SillyTavern's own functions**; connection profiles shown as *selections*, separate from preset contents |
@@ -460,10 +460,13 @@ requests; see [verification details](docs/STATUS.md).
 
 - **Projects first.** Editing a project does not update installed SillyTavern characters or tools. Applying a
   project, creating or updating a character, and installing sprites or scripts are explicit actions.
-- **Backups.** Everything Apply would overwrite in SillyTavern is backed up and can be restored from the inspector.
+- **Backups.** Supported live updates record a backup that can be restored from the inspector. Expression-sprite
+  installation and Quick Reply installation through Home's application plan do not save the previous files or set;
+  back up existing expressions and Quick Reply sets before replacing them through those paths.
 - **Undo project edits.** Use **Undo** in the top bar, or Ctrl+Z / Ctrl+Y outside text fields. Advanced-item
   deletion also offers Undo in its notification. Undo history resets when loading a project; snapshots provide
-  longer-term recovery. Undo does not reverse an install or update in SillyTavern; use the saved live backups.
+  longer-term recovery. Undo does not reverse an install or update in SillyTavern; restore a live backup where one
+  was recorded, or your own backup for the installation exceptions above.
 - **Scripts never run on their own.** Quick Replies are added, not executed. Test runs are explicit and list
   their side effects first. Regex previews run in a sandboxed worker with a timeout.
 - **Provenance.** Every AI change records the model, the prompt and when it was made.
@@ -513,7 +516,8 @@ account; if one does, pick another writing connection in <b>AI setup</b>.
 Pulling something from SillyTavern makes a project copy. Editing or deleting that copy leaves the installed item
 alone. Use <b>Home → Use in SillyTavern…</b> to review a project application plan, or a character's
 <b>Export &amp; use → Review &amp; apply to SillyTavern…</b> to inspect its changes. Workshops also have explicit
-save/install actions; the studio records backups for live updates.
+save/install actions. Supported updates record live backups; expression installation and Quick Reply installation
+through the project plan require your own backup of existing items before replacement.
 </details>
 
 <details>
