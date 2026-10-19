@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import {
     detectFamily, isFast, samplingFor, composePrompt, buildTxt2Img, buildExpression, spritePrompts, adoptWorkflow,
     detectExtras, sizeFor, EXPRESSIONS, CORE_EXPRESSIONS, referenceSize, referenceLoaderOrder, spriteOptions, FACE_MODELS,
-    CUTOUTS, T5_ENCODERS, buildKontextExpression, buildKontextEdit, editInstruction, EDIT_EXPRESSIONS, kontextModel, fluxVae, pictureInstruction,
+    CUTOUTS, T5_ENCODERS, buildKontextExpression, buildKontextEdit, editInstruction, EDIT_EXPRESSIONS, kontextModel, fluxVae, pictureInstruction, buildIdentityExpression,
 } from '../src/core/comfy.js';
 import { withSpriteAssets } from '../src/core/cardio.js';
 import { emptyCardV3 } from '../src/core/card.js';
@@ -140,6 +140,7 @@ beforeEach(() => {
         posted.push({ url, body });
         if (url === '/api/sd/comfy/generate') {
             const wf = JSON.parse(body.prompt).prompt;
+            if (ctx.failure) return { ok: false, status: 500, text: async () => ctx.failure };
             if (ctx.reject?.(wf)) return { ok: false, status: 500, text: async () => 'ComfyUI returned an error.' };
             if (Object.values(wf).some(n => ['RemBGSession+', 'TransparentBGSession+'].includes(n.class_type)) && ctx.noRembg) return { ok: false, status: 500, text: async () => 'Cannot execute because node RemBGSession+ does not exist.' };
             return { ok: true, status: 200, json: async () => ({ format: 'png', data: Buffer.from('PNGDATA').toString('base64') }) };
@@ -371,5 +372,47 @@ test('other pictures from a character picture: a wide scene canvas, the right wo
     assert.equal(new TextDecoder().decode(r.bytes), 'PNGDATA');
     assert.equal(graphsSent().at(-1).ref.class_type, 'ETN_LoadImageBase64', 'a refused loader is skipped');
     ctx.extensionSettings.creativeStudio.image.spriteMethod = 'face';
-    assert.equal(await paintFromPicture({ reference: new Uint8Array([9]), instruction: 'x', prepare: fakePrepare, findKontext: async () => ({ model: 'k', vae: 'ae.safetensors' }) }), null, 'Kontext switched off in the settings');
+    assert.ok((await paintFromPicture({ reference: new Uint8Array([9]), instruction: 'x', prepare: fakePrepare, findKontext: async () => ({ model: 'k', vae: 'ae.safetensors' }) })).bytes, 'legacy sprite settings do not disable picture references');
+});
+
+test('face adapter expressions condition the sampler on the selected portrait and never create a fresh base', () => {
+    for (const adapter of ['plus-face', 'faceid']) {
+        const wf = buildIdentityExpression({ adapter, ckpt: 'pony.safetensors', ...spritePrompts({ look: '', label: 'joy', family: 'pony', fromReference: true }), seed: 42, reference: { loader: 'easy loadImageBase64', data: 'REF' } });
+        linksResolve(wf);
+        assert.deepEqual(wf.identity.inputs.image, ['refFit', 0]);
+        assert.deepEqual(wf.express.inputs.model, ['identity', 0]);
+        assert.deepEqual(wf.express.inputs.latent_image, ['encode', 0]);
+        assert.equal(wf.express.inputs.denoise, 0.35);
+        assert.equal(wf.sample, undefined);
+        assert.equal(wf.latent, undefined);
+        assert.equal(wf.identityLoader.inputs.preset, adapter === 'faceid' ? 'FACEID PLUS V2' : 'PLUS FACE (portraits)');
+    }
+    assert.throws(() => buildIdentityExpression({}), /portrait/);
+});
+
+test('identity expression runs need a portrait and no text-model request or invented appearance', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    await assert.rejects(paintSprites({ look: 'words', identity: 'plus-face', labels: ['joy'] }), /portrait/);
+    const seen = [];
+    const r = await paintSprites({ look: '', identity: 'plus-face', labels: ['joy', 'anger'], reference: new Uint8Array([9]), prepare: fakePrepare, onEach: (label, result) => seen.push([label, result.method]) });
+    assert.deepEqual(seen, [['joy', 'plus-face'], ['anger', 'plus-face']]);
+    assert.equal(r.method, 'plus-face');
+    assert.equal(r.fromReference, true);
+    assert.ok(graphsSent().every(w => w.identity && !w.sample));
+});
+
+test('an adapter model failure stops once and reports setup guidance without unconditioned fallback', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    ctx.failure = 'IPAdapterUnifiedLoaderFaceID: LoRA model not found';
+    const seen = [];
+    const r = await paintSprites({ identity: 'faceid', labels: ['joy', 'anger'], reference: new Uint8Array([9]), prepare: fakePrepare, onEach: (label, result) => seen.push(result) });
+    assert.equal(graphsSent().length, 1);
+    assert.deepEqual(r.sprites, {});
+    assert.match(seen[0].error, /LoRA/);
+    assert.match(seen[0].error, /No different-person fallback/);
+});
+
+test('expression-save failures propagate instead of being counted as successful generated sprites', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    await assert.rejects(paintSprites({ identity: 'plus-face', labels: ['joy'], reference: new Uint8Array([9]), prepare: fakePrepare, onEach: () => { throw new Error('disk full'); } }), /disk full/);
 });

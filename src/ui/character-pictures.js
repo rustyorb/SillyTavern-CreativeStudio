@@ -10,6 +10,7 @@ import { stSpriteFolder } from '../st/live.js';
 import { saveMedia, saveCharacterPicture, mediaBytes, toPngBytes } from './media.js';
 import { pictureDraft, pictureTarget } from '../core/pictures.js';
 import { navigateStudio } from './guide.js';
+import { DeletePictureButton } from './deletion.js';
 
 /**
  * Pictures for a character: the AI writes the prompts (in the style the checkpoint wants), ComfyUI (or SillyTavern's
@@ -38,6 +39,9 @@ export function CharacterPictures({ store, env, project, ch }) {
     const job = useRef(false);
     const [spriteSet, setSpriteSet] = useState('core');
     const [progress, setProgress] = useState(null);
+    const [expressionStatus, setExpressionStatus] = useState('');
+    const [expressionError, setExpressionError] = useState('');
+    const [testExpression, setTestExpression] = useState('joy');
     const [mood, setMood] = useState('neutral');
     const stop = useRef(null);
     const d = ch.card.data;
@@ -59,11 +63,10 @@ export function CharacterPictures({ store, env, project, ch }) {
     const spriteIds = new Set(Object.values(sprites));
     const gallery = project.media.filter(m => ((ch.links?.media ?? []).includes(m.id) || m.id === ch.avatarMediaId) && !spriteIds.has(m.id));
     const stLinked = ch.origin?.kind === 'st' ? ch.origin.avatar : ch.stAvatar;
-    // Sprites start from the character's own picture when there is one (imported characters above all). Sprites
-    // already painted from a fresh portrait keep that source unless the author switches, so a set never mixes.
+    // Legacy spriteSource='fresh' never overrides the character's visible portrait reference.
     const avatarPic = ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null;
-    const spriteSource = ch.spriteSource ?? (['st', 'import'].includes(ch.origin?.kind) || !Object.keys(sprites).length ? 'avatar' : 'fresh');
-    const fromAvatar = !!avatarPic && spriteSource === 'avatar';
+    const fromAvatar = !!avatarPic;
+    const adapter = ch.expressionAdapter ?? 'plus-face';
     const uploadPortrait = async () => {
         const file = await pickFile('image/png,image/jpeg,image/webp,image/gif');
         if (!file) return;
@@ -130,41 +133,39 @@ export function CharacterPictures({ store, env, project, ch }) {
     const paintAll = () => run('all', async () => { for (const pr of prompts) await paintOne(pr); });
 
     const paintSpriteSet = labels => run('sprites', async () => {
-        const now = currentCharacter;
-        const lookOf = c => c.appearance || (c.imagePrompts ?? []).find(pr => /avatar|portrait/i.test(pr.purpose))?.prompt || '';
-        // Sprites need words for the character's look too: the AI writes them from the card when nothing says yet.
-        if (!lookOf(now())) await writePrompts(false);
-        const lookNow = lookOf(now());
-        const reference = fromAvatar ? findArtifact(store.get(), 'media', now().avatarMediaId) : null;
-        if (!lookNow && !reference) throw new Error('Write the image prompts first: sprites reuse the character\'s appearance.');
+        setExpressionError('');
+        setExpressionStatus('Preparing expressions…');
+        const current = currentCharacter();
+        const reference = findArtifact(store.get(), 'media', current.avatarMediaId);
+        if (!reference) { setExpressionStatus('Choose a portrait first.'); return; }
+        const lookNow = current.appearance || '';
         const ac = new AbortController();
         stop.current = ac;
         const seed = ch.spriteSeed ?? randomSeed();
         const failed = [];
-        const failures = [];
         setProgress({ done: 0, total: labels.length, current: labels[0] });
         store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSeed', seed, { actor: 'ai', summary: 'Sprite seed' }), 'sprite seed');
-        const res = await paintSprites({
-            look: lookNow, labels, rating, seed, signal: ac.signal, reference: reference ? await mediaBytes(env, reference) : null,
+        let res;
+        try { res = await paintSprites({
+            look: lookNow, labels, rating, seed, identity: adapter, signal: ac.signal, reference: await mediaBytes(env, reference), onStatus: setExpressionStatus,
             onEach: async (label, r) => {
                 if (r.bytes) {
-                    await saveCharacterPicture(env, store, project.id, ch.id, r.bytes, { label, prompt: r.positive, seed: r.seed });
+                    await saveCharacterPicture(env, store, project.id, ch.id, r.bytes, { label, prompt: r.positive, seed: r.seed, referenceMediaId: reference.id, method: r.method });
                 } else {
                     failed.push(label);
-                    failures.push(r.error);
+                    setExpressionError(r.error);
                 }
                 setProgress(pg => ({ ...pg, done: pg.done + 1, current: labels[labels.indexOf(label) + 1] }));
             },
-        });
+        }); } catch (e) { setExpressionError(e.message); setExpressionStatus('Expressions stopped.'); throw e; }
         setProgress(null);
         const made = Object.keys(res.sprites).length;
-        const how = { kontext: ' from the avatar (FLUX Kontext edit)', face: ' from the avatar (face repainted)', whole: ' from the avatar (whole picture repainted)' }[res.method] ?? '';
-        env.toast(made ? `${made} sprite(s) painted${how}${res.transparent ? ' with transparent backgrounds' : ''}${failed.length ? `; failed: ${failed.join(', ')}` : ''}.`
-            : `No sprites painted. ${failures.at(-1) ?? ''}`.trim(), failed.length ? 'error' : 'ok', 9000);
+        const summary = res.cancelled ? `Stopped. ${made} expression(s) saved.` : failed.length ? `${made} expression(s) saved; generation stopped at ${failed[0]}.` : `${made} expression(s) saved using this portrait and ${adapter === 'faceid' ? 'FaceID Plus v2' : 'IP-Adapter Plus Face'}.`;
+        setExpressionStatus(summary);
+        env.toast(summary, failed.length ? 'error' : 'ok', 9000);
     });
     const newFace = async () => {
-        if (!(await env.confirm(fromAvatar ? 'Paint every sprite again from the avatar?' : 'Paint every sprite again with a new face?', 'The current sprites are replaced (Ctrl+Z brings them back).'))) return;
-        store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSeed', randomSeed(), { summary: 'New sprite seed' }), 'sprite seed');
+        if (!(await env.confirm('Regenerate expressions from this portrait?', 'The current expressions are replaced one at a time. Undo in the top bar restores each replacement.'))) return;
         paintSpriteSet(Object.keys(sprites).length ? Object.keys(sprites) : CORE_EXPRESSIONS);
     };
     const install = () => run('install', async () => {
@@ -176,6 +177,7 @@ export function CharacterPictures({ store, env, project, ch }) {
         const folder = stLinked ? stSpriteFolder(stLinked, d.name) : d.name;
         const r = await installSprites(folder, bytes);
         const ok = r.filter(x => x.ok).length;
+        setExpressionStatus(`Installed ${ok} of ${r.length} expressions for ${d.name}. Enable Character Expressions in SillyTavern and open a chat with this character.`);
         env.toast(`Installed ${ok} of ${r.length} sprite(s) in characters/${folder}. Turn on Character Expressions in SillyTavern's extensions to see them.`, ok === r.length ? 'ok' : 'error', 8000);
     });
 
@@ -237,43 +239,57 @@ export function CharacterPictures({ store, env, project, ch }) {
             </div>`)}
         </${Section}>`}
         <${Section} title=${`${d.name}’s pictures (${gallery.length})`}>
+            <p class="cs-muted cs-small">These are saved pictures of ${d.name}, not separate characters. Choose the correct face as the portrait before making expressions.</p>
             ${!gallery.length && html`<p class="cs-muted">Your generated and uploaded pictures will appear here.</p>`}
             <div class="cs-gallery">${[...gallery].reverse().map(m => html`<figure key=${m.id} class="cs-gallery-item">
                 <a href=${m.url} target="_blank" rel="noopener"><img src=${m.url} alt=${m.name} title=${m.prompt ?? m.name} loading="lazy" /></a>
                 <figcaption>${m.purpose ?? ''}
                     ${m.id !== ch.avatarMediaId ? html`<${Button} small label="Use as avatar" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'avatarMediaId', m.id, { summary: 'Set avatar image' }), 'set avatar')} />` : html`<${Badge} kind="ok">avatar</${Badge}>`}
-                    <${Button} small icon="image" label="View / remove" onClick=${() => navigateStudio({ area: 'media', selection: { type: 'media', id: m.id } })} />
+                    <${Button} small icon="image" label="Details" onClick=${() => navigateStudio({ area: 'media', selection: { type: 'media', id: m.id } })} />
+                    <${DeletePictureButton} store=${store} env=${env} project=${project} media=${m} />
                 </figcaption>
             </figure>`)}</div>
         </${Section}>
-        <${Section} title=${`Expression sprites (${Object.keys(sprites).length})`} open=${false}>
-            <div class="cs-muted cs-small">One face, many moods, for SillyTavern's Character Expressions. ${fromAvatar ? 'Every sprite is made from the avatar, so face, outfit and art style stay the character\'s own.' : 'Every sprite starts from the same portrait, so hair, face and outfit stay the same.'}${comfy ? '' : ' Needs ComfyUI; choose Image settings above.'}</div>
+        <${Section} title=${`Expressions — same character, different moods (${Object.keys(sprites).length})`} open=${true}>
+            <p class="cs-muted">Expressions are pictures for moods such as joy or anger. Make one, check the face, then generate the rest. Installing them lets SillyTavern display them beside your chat.</p>
+            <div class="cs-expression-reference">
+                ${avatarPic && html`<img src=${avatarPic.url} alt=${`Expression reference for ${d.name}`} />`}
+                <div><strong>1. Reference portrait: ${d.name}</strong><p>${avatarPic ? 'Every expression uses this exact picture with a face-reference adapter. Choose “Use as avatar” under another saved picture to change it.' : 'Upload a portrait or choose “Use as avatar” under the correct picture above.'}</p>
+                ${!avatarPic && html`<${Button} label="Upload reference portrait…" onClick=${uploadPortrait} disabled=${!!busy} />`}
+                <span class="cs-muted cs-small">Face matching is not perfect. Start with a clear, close portrait and check one result before making a set.</span></div>
+            </div>
+            <${Select} label="2. Face-reference method" value=${adapter} options=${[{ value: 'plus-face', label: 'Illustrated / anime — IP-Adapter Plus Face' }, { value: 'faceid', label: 'Photographic — FaceID Plus v2' }]}
+                onChange=${value => store.update(p => editArtifactField(p, 'characters', ch.id, 'expressionAdapter', value, { summary: 'Expression face adapter' }), 'expression face adapter')} />
+            ${(!comfy || !ready || !settings?.ckpt) && html`<div class="cs-warn-text">Expressions need ComfyUI with a full SDXL or SD1.5 checkpoint and the selected adapter installed. <${Button} small label="Set up expressions" onClick=${() => setSetupOpen(true)} /></div>`}
+            <div class="cs-row"><strong>3. Try one expression</strong>
+                <select class="text_pole cs-input" style="width:auto" aria-label="Test expression" value=${testExpression} onChange=${e => setTestExpression(e.currentTarget.value)}>${Object.keys(EXPRESSIONS).map(l => html`<option value=${l} selected=${testExpression === l}>${l}</option>`)}</select>
+                <${Button} kind="primary" icon="face-smile" label="Generate one expression" onClick=${async () => { if (sprites[testExpression] && !(await env.confirm(`Replace ${testExpression}?`, 'The existing expression can be restored with Undo.'))) return; paintSpriteSet([testExpression]); }} disabled=${!!busy || ai.busy || !comfy || !ready || !settings?.ckpt || !avatarPic} />
+            </div>
+            <p class="cs-muted cs-small">Satisfied with the face? Generate the missing moods below. No fallback to a new person is used if the adapter fails.</p>
+            ${Object.values(sprites).some(id => { const m = findArtifact(project, 'media', id); return m && (m.referenceMediaId !== avatarPic?.id || m.method !== adapter); }) && html`<p class="cs-warn-text">Some saved expressions use an older or different setup. Use Regenerate expressions to remake them from the portrait and adapter shown here.</p>`}
             <div class="cs-row">
                 <select class="text_pole cs-input" style="width:auto" value=${spriteSet} onChange=${e => setSpriteSet(e.currentTarget.value)} aria-label="Which expressions">
                     <option value="core" selected=${spriteSet === 'core'}>8 core expressions</option>
                     <option value="all" selected=${spriteSet === 'all'}>All 28 SillyTavern expressions</option>
                 </select>
-                ${avatarPic && html`<select class="text_pole cs-input" style="width:auto" aria-label="What the sprites start from"
-                    onChange=${e => store.update(p => editArtifactField(p, 'characters', ch.id, 'spriteSource', e.currentTarget.value, { summary: 'Sprites start from' }), 'sprite source')}>
-                    <option value="avatar" selected=${fromAvatar}>From the avatar</option>
-                    <option value="fresh" selected=${!fromAvatar}>From a new portrait</option>
-                </select>`}
                 <${Button} kind="ai" icon="face-smile" label=${busy === 'sprites' ? 'Generating expressions…' : Object.keys(sprites).length ? 'Generate missing expressions' : 'Generate expressions'}
-                    onClick=${() => paintSpriteSet(labels.filter(l => !sprites[l]).length ? labels.filter(l => !sprites[l]) : labels)} disabled=${!!busy || ai.busy || !comfy || !ready} />
+                    onClick=${() => paintSpriteSet(labels.filter(l => !sprites[l]))} disabled=${!!busy || ai.busy || !comfy || !ready || !settings?.ckpt || !avatarPic || !labels.some(l => !sprites[l])} />
                 ${busy === 'sprites' && html`<${Button} small icon="stop" label="Stop" onClick=${() => stop.current?.abort()} />`}
-                ${Object.keys(sprites).length > 0 && !busy && html`<${Button} small icon="rotate" label=${fromAvatar ? 'Regenerate all expressions' : 'New face'} onClick=${newFace} disabled=${!comfy || !ready} />`}
+                ${Object.keys(sprites).length > 0 && !busy && html`<${Button} small icon="rotate" label="Regenerate expressions" onClick=${newFace} disabled=${!comfy || !ready || !settings?.ckpt || !avatarPic} />`}
                 ${Object.keys(sprites).length > 0 && html`<${Button} small icon="upload" label=${busy === 'install' ? 'Installing…' : 'Install in SillyTavern'} onClick=${install} disabled=${!!busy}
                     title=${stLinked ? `Upload to characters/${d.name}/ (Character Expressions)` : 'Uploads to characters/<name>/ in SillyTavern; create the character there too (Export & SillyTavern tab)'} />`}
             </div>
+            ${expressionStatus && html`<div role="status" class="cs-expression-status">${expressionStatus}</div>`}
+            ${expressionError && html`<div role="alert" class="cs-err-text cs-expression-error">${expressionError}</div>`}
             ${progress && html`<div class="cs-fuse-wrap">
                 <div class="cs-fuse">${Array.from({ length: progress.total }, (_, i) => html`<span key=${i} class=${cx('cs-fuse-seg', i < progress.done ? 'is-done' : i === progress.done ? 'is-running' : '')}></span>`)}</div>
                 <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. ${fromAvatar ? 'Each one starts from the avatar.' : 'The first one also paints the base portrait.'}</div>
             </div>`}
             ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${moodOrder(Object.keys(EXPRESSIONS).filter(l => sprites[l])).map(l => {
                 const m = findArtifact(project, 'media', sprites[l]);
-                return m && html`<button key=${l} type="button" class=${cx('cs-sprite', `cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`, shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
+                return m && html`<div key=${l} class="cs-expression-card"><button type="button" class=${cx('cs-sprite', `cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`, shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
                     <img src=${m.url} alt="" loading="lazy" /><span class="cs-sprite-label">${l}</span>
-                </button>`;
+                </button><${DeletePictureButton} store=${store} env=${env} project=${project} media=${m} label="Delete expression" /></div>`;
             })}</div>
             <div class="cs-muted cs-small">Sprites also travel inside CHARX exports as emotion assets; SillyTavern turns them back into sprites on import.</div>`}
             ${(scene || figure) && html`<div class=${cx('cs-stage', backdrop && 'has-backdrop', shownMood && `cs-mood-${MOOD_FAMILY[shownMood] ?? 'plain'}`)} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the generated scene' : ''}`}>

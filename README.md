@@ -21,7 +21,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-170%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-174%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -108,7 +108,7 @@ details when you need them, then use **Export & use** to download a card or send
 | Generate from an idea | **Home → Generate with AI**; choose **Character & openings**, **Character & world**, or **Complete toolkit** |
 | Write or revise a field with AI | **Ask AI** beside the field; enter your direction and choose **Add to it**, **Rewrite**, or **3 takes** |
 | Upload a portrait or generate pictures | Open a character → **Pictures**. Write a **Picture prompt** (or use **Help write prompt**) and press **Generate picture**. **Upload portrait…** adds an existing image. |
-| Make expression sprites | Open a character → **Pictures → Expression sprites**; this needs ComfyUI |
+| Make expression sprites | **Pictures → Expressions — same character, different moods**. Check the reference portrait, choose a face adapter, then **Generate one expression** before making a set. Needs ComfyUI and adapter models. |
 | Set up an image generator | **AI setup → Images**; select ComfyUI or SillyTavern Image Generation |
 | Browse or clean up project images | **Pictures → Project picture library** shows every character's images; normal **Pictures** stays with the character you are working on |
 | Edit a lorebook | **World** |
@@ -273,7 +273,11 @@ Choose **Picture type**, write a **Picture prompt**, and press **Generate pictur
 optional writing step beside the same prompt box; it does not generate an image. **Image settings** opens the
 image generator settings directly. If no generator is configured, the Generate button remains visible with setup guidance.
 
-Upload an existing portrait with **Upload portrait…**, or expand **Expression sprites** for **Generate expressions**.
+Upload an existing portrait with **Upload portrait…**. The **Expressions** section shows the exact portrait used
+as the face reference. Choose **Use as avatar** under a saved picture to change that reference. Start with
+**Generate one expression**, inspect it, then generate the missing moods. **Delete picture** and
+**Delete expression** are directly below each image, with confirmation and Undo. **Delete character** removes
+the whole character instead.
 The first generated portrait becomes the avatar if the character has none. Further pictures appear in that character's
 gallery. **Project picture library** is the separate view of all project images, including unused files.
 **You never touch a workflow:** the studio builds them in code.
@@ -281,14 +285,17 @@ gallery. **Project picture library** is the separate view of all project images,
 - **Portraits, full body and scenes.** The AI writes the prompts in the style your checkpoint wants: score tags for
   Pony, booru tags for Illustrious, plain sentences for realistic SDXL. Fast DMD2/Lightning checkpoints get fast
   sampling, and a second 1.5× pass sharpens portraits.
-- **Expression sprites that keep one face.** 8 core moods or all 28 of SillyTavern's. Every sprite starts from the
-  same portrait, so hair, face and outfit stay put. Backgrounds are cut out when ComfyUI has *ComfyUI Essentials*
-  (InSPyReNet keeps long hair intact).
-- **Or from the picture your character already has.** Bring a character in and its sprites are made *from its
-  avatar*. With a FLUX Kontext model on your ComfyUI, each mood is an edit of that very picture, so an anime avatar
-  stays anime and nothing but the face changes. Without one, only the face is repainted (Impact Pack's
-  FaceDetailer), or else the whole picture, gently. With Kontext, the portrait, full-body and scene pictures are
-  made from the avatar too, in its art style.
+- **Expressions with a face reference.** One test mood, 8 core moods or all 28 of SillyTavern's. The selected
+  portrait conditions both the starting image and the sampling model. **IP-Adapter Plus Face** is the default
+  for illustrated/anime faces; **FaceID Plus v2** is available for photographic faces. Identity and expression
+  strength still vary with the portrait and checkpoint, so inspect one result first. The studio stops on adapter
+  failure instead of silently generating an unconditioned person. Background removal is optional.
+- **Adapter setup.** Install [ComfyUI IPAdapter Plus](https://github.com/cubiq/ComfyUI_IPAdapter_plus), a compatible
+  SDXL/SD1.5 checkpoint, the matching Plus Face or FaceID adapter, and CLIP Vision. FaceID also requires InsightFace
+  and its matching LoRA. Custom text-to-image workflows do not replace the expression adapter workflow.
+  Old expression sets are marked for regeneration when their reference or method differs from the current choice.
+- **Other pictures from the avatar.** When FLUX Kontext is available, new portraits, full-body pictures and scenes
+  can use the avatar as a reference edit. Without it, those ordinary picture requests use their written prompts.
 - **Straight into SillyTavern.** *Install in SillyTavern* fills Character Expressions, and CHARX exports carry
   the sprites as V3 emotion assets.
 - **Your own workflow, if you like.** Export it from ComfyUI with *Export (API)*, then choose *Use my own…*. The prompts, size,
@@ -298,7 +305,7 @@ gallery. **Project picture library** is the separate view of all project images,
 <div align="center">
   <img src="docs/assets/moods.webp" alt="SillyTavern's default character Seraphina: her original anime avatar, animated so that only her face changes through her moods, beside twelve expression sprites made from it (joy, amusement, pride, relief, embarrassment, surprise, fear, nervousness, sadness, grief, anger, disgust) in exactly the same art style, and below them a full-body picture and an empty forest scene, both made from the same avatar" width="100%" />
   <br />
-  <sub><i>Real output: ST's own Seraphina brought in with one click, then all 28 moods and new pictures made from her avatar by FLUX Kontext (Nunchaku FP4) through the studio, about 40 s each. On the left her avatar runs through the moods: watch everything but her face stay put.</i></sub>
+  <sub><i>Historical output from the earlier FLUX Kontext expression workflow: ST's Seraphina, about 40 s per mood. The current expression controls use the face-reference adapters described above.</i></sub>
 </div>
 
 <br />
@@ -481,7 +488,7 @@ requests; see [verification details](docs/STATUS.md).
 <br />
 They are still included. <b>Advanced tools → Quick Replies</b> opens the Quick Reply and STscript workshop.
 For pictures and expressions, open a character and choose <b>Pictures</b>. The main <b>Pictures</b> button follows
-that same character. Write a prompt and press <b>Generate picture</b>; expand <b>Expression sprites</b> for moods.
+that same character. Write a prompt and press <b>Generate picture</b>; use the <b>Expressions</b> steps for moods.
 <b>Image settings</b> opens the generator configuration. <b>Project picture library</b> shows all project images.
 </details>
 
@@ -537,8 +544,10 @@ takes its place.
 <details>
 <summary><b>How do I get rid of pictures I don't need?</b></summary>
 <br />
-Open <b>Pictures → Project picture library</b>, then click a picture to see which characters use it. <b>Remove from project</b>
-removes it and clears its project references. The <b>Unused</b> filter finds pictures no character uses;
+Use <b>Delete picture</b> directly under a gallery image, or <b>Delete expression</b> under a mood. The named
+confirmation explains shared uses; deletion clears the picture's project references. <b>Delete character</b>
+removes the whole character instead. <b>Pictures → Project picture library</b> also has direct delete buttons,
+and opening an image shows which characters use it. The <b>Unused</b> filter finds pictures no character uses;
 <b>Remove unused</b> offers to clear them together. Removing a character also removes pictures only it used.
 Use the top-bar <b>Undo</b> to restore a removal.
 </details>
@@ -605,7 +614,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-170 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+174 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline, workflow guidance, draft persistence, and deletion/Undo behavior. A live suite runs inside a
 SillyTavern tab against its server and creates then removes `CSTEST_*` items. Run it on a separate local test

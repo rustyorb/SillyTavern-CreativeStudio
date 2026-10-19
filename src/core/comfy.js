@@ -425,6 +425,27 @@ function baseNodes(wf, { ckpt, clipSkip }) {
     return ['ckpt', 1];
 }
 
+/** Reference conditioning is part of the sampling model, not just an image-to-image starting point. */
+export function buildIdentityExpression({ adapter = 'plus-face', ...args }) {
+    if (!args.reference) throw new Error('Choose a character portrait before generating expressions.');
+    if (!['plus-face', 'faceid'].includes(adapter)) throw new Error('Choose a supported face-reference adapter.');
+    const wf = buildExpression({ ...args, face: null, strength: 0.35 });
+    const faceid = adapter === 'faceid';
+    wf.identityLoader = {
+        class_type: faceid ? 'IPAdapterUnifiedLoaderFaceID' : 'IPAdapterUnifiedLoader',
+        inputs: { model: ['ckpt', 0], preset: faceid ? 'FACEID PLUS V2' : 'PLUS FACE (portraits)',
+            ...(faceid ? { lora_strength: 0.6, provider: 'CPU' } : {}) },
+    };
+    wf.identity = {
+        class_type: faceid ? 'IPAdapterFaceID' : 'IPAdapterAdvanced',
+        inputs: { model: ['identityLoader', 0], ipadapter: ['identityLoader', 1], image: ['refFit', 0],
+            weight: 1, ...(faceid ? { weight_faceidv2: 2 } : {}), weight_type: 'linear',
+            combine_embeds: 'concat', start_at: 0, end_at: 1, embeds_scaling: 'V only' },
+    };
+    wf.express.inputs.model = ['identity', 0];
+    return wf;
+}
+
 /** Which optional extras the server can do, from its /object_info node list. */
 export function detectExtras(nodeTypes = []) {
     const has = new Set(nodeTypes);

@@ -181,7 +181,7 @@ function CharacterEditor(props) {
             ${pendingCount > 0 && html`<${Badge} kind="accent">${pendingCount} pending</${Badge}>`}
             <div class="cs-spacer"></div>
             <${CreationRoute} store=${store} project=${project} compact />
-            <${Button} small icon="trash" kind="danger" title="Remove from project" onClick=${remove} />
+            <${Button} small icon="trash" kind="danger" label="Delete character" title="Remove this character from the project" onClick=${remove} />
         </div>
         <${Tabs} tabs=${tabs.filter(t => !t.advanced)} active=${tab} onChange=${setTab} right=${html`<${Button} small icon="sliders" label="Advanced" ariaPressed=${advanced || EDITOR_TABS.find(t => t.id === tab)?.advanced} onClick=${() => { setAdvanced(!advanced); if (EDITOR_TABS.find(t => t.id === tab)?.advanced) setTab('core'); }} />`} />
         ${(advanced || EDITOR_TABS.find(t => t.id === tab)?.advanced) && html`<${Tabs} tabs=${tabs.filter(t => t.advanced)} active=${tab} onChange=${setTab} />`}

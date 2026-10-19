@@ -3,6 +3,7 @@ import { html, useState, Button, Icon, Section, Empty, cx } from '../kit.js';
 import { findArtifact, mediaUsage, unusedMedia, removeMedia } from '../../core/project.js';
 import { workingCharacter } from '../../core/pictures.js';
 import { CharacterPictures } from '../character-pictures.js';
+import { DeleteCharacterButton, DeletePictureButton } from '../deletion.js';
 
 const HOW = { avatar: 'avatar', gallery: 'gallery picture' };
 const ORIGIN = { avatar: 'Portrait', generated: 'Generated in the studio', sprite: 'Expression sprite', 'charx-asset': 'File from a CHARX card', image: 'Added picture' };
@@ -26,6 +27,7 @@ export function PicturesArea(props) {
                 <div><span class="cs-muted cs-small">Working on</span><strong>${ch.card.data.name || 'Unnamed character'}</strong><span class="cs-muted cs-small">Prompts, pictures and expressions stay with this character.</span></div>
                 <div class="cs-spacer"></div><${Button} small label="Back to character" onClick=${() => select('characters', ch.id)} />
                 <${Button} small label="Change character" onClick=${() => { setSelection(null); setArea('characters'); }} />
+                <${DeleteCharacterButton} store=${props.store} env=${props.env} project=${project} character=${ch} onDeleted=${() => setSelection(null)} />
             </div><${CharacterPictures} ...${props} ch=${ch} key=${ch.id} />`
             : html`<${Empty} icon="user" title="Choose the character you’re working on">Pictures will stay with that character as you move around the studio.
                 <div class="cs-row"><${Button} kind="primary" label="Choose a character" onClick=${() => { setSelection(null); setArea('characters'); }} /></div>
@@ -49,10 +51,10 @@ function PictureLibrary(props) {
             <div class="cs-picture-toolbar"><input class="text_pole" aria-label="Search pictures" placeholder="Find a picture or character…" value=${query} onInput=${e => setQuery(e.currentTarget.value)} />
                 <div class="cs-row" role="group" aria-label="Filter pictures">${[['all', 'All pictures'], ['sprites', 'Expressions'], ['unused', 'Unused']].map(([id, label]) => html`<button class=${cx('cs-btn', filter === id && 'cs-btn-primary')} aria-pressed=${filter === id} onClick=${() => setFilter(id)}>${label}</button>`)}</div>
             </div>
-            <div class="cs-picture-grid">${pictures.map(m => html`<button key=${m.id} class="cs-picture-tile" onClick=${() => select('media', m.id)}>
+            <div class="cs-picture-grid">${pictures.map(m => html`<div key=${m.id} class="cs-picture-card"><button class="cs-picture-tile" onClick=${() => select('media', m.id)}>
                 ${m.kind === 'image' ? html`<img src=${m.url} alt="" loading="lazy" />` : html`<div class="cs-picture-file"><${Icon} name="file" /></div>`}
                 <strong>${m.name}</strong><span>${unused.has(m.id) ? 'Unused' : [...new Set(mediaUsage(project, m.id).map(u => u.name))].join(', ')}</span>
-            </button>`)}</div>
+            </button><${DeletePictureButton} store=${store} env=${env} project=${project} media=${m} /></div>`)}</div>
             ${!pictures.length && html`<${Empty} icon="image" title=${project.media.length ? 'No pictures match' : 'Your picture collection starts with a character'}>${project.media.length ? 'Try another search or choose All pictures.' : 'Import a card with an avatar, or open a character to add pictures.'}<div class="cs-row"><${Button} label="Open characters" onClick=${() => { props.setSelection(null); props.setArea('characters'); }} /></div></${Empty}>`}
         </div>`;
 }
