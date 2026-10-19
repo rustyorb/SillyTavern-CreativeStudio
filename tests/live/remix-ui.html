@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Remix UI test — simulated model, disposable project</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+body { margin: 0; background: #171717; color: #ddd; font: 15px system-ui; }
+* { box-sizing: border-box; }
+.text_pole { background: #242424; color: #ddd; border: 1px solid #555; padding: 6px; border-radius: 4px; }
+#root { padding: 20px; --cs-gap: 8px; --cs-line: #444; --cs-panel: #202020; --cs-dim: #aaa; --cs-accent: #d3973d; --cs-err: #ee7777; --cs-ok: #77bd88; }
+.test-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 15px; }
+</style>
+<div id="root" class="cs-root"></div>
+<script type="module">
+// Browser smoke fixture. Only the external model is simulated; production components, prompts,
+// schemas, generation, word checks and undo run normally. No user data, network writes or model calls.
+import { html, render, useState } from '../../vendor/preact-htm.mjs';
+import { createProject, newCharacter } from '../../src/core/project.js';
+import { createStore, useStore } from '../../src/ui/store.js';
+import { CharactersArea } from '../../src/ui/areas/characters.js';
+const p = createProject('Disposable remix test');
+p.characters = ['Mara', 'Orin'].map((name, i) => {
+    const c = newCharacter(name);
+    c.card.data.description = `Age: ${30 + i * 10}\nSpecies: Human\nGender: ${i ? 'Man' : 'Woman'}\n${i ? 'A patient explorer looking for a lost island.' : 'A reckless archivist who keeps dangerous promises.'}`;
+    c.card.data.personality = i ? 'Patient, curious, pragmatic.' : 'Defiant, loyal, observant.';
+    return c;
+});
+const originals = JSON.stringify(p.characters);
+const store = createStore(p);
+let mode = 'success', calls = 0;
+const ctx = {
+    mainApi: 'openai', onlineStatus: 'UI test model', getChatCompletionModel: () => 'Simulated replies', extensionSettings: {},
+    generateRaw: async req => {
+        calls++;
+        document.querySelector('#calls').textContent = `Model requests: ${calls}`;
+        document.querySelector('#request').textContent = JSON.stringify(req, null, 2);
+        if (mode === 'slow') await new Promise(resolve => setTimeout(resolve, 10000));
+        if (mode === 'error') throw new Error('Simulated connection failure');
+        const wanted = req.jsonSchema.value.properties.fields.required;
+        const repair = wanted.length === 1;
+        const fields = {
+            name: 'Iris Vale', description: repair && mode === 'success' ? 'A keeper of forgotten promises who travels between isolated settlements collecting stories and returning lost letters to their rightful owners.' : 'A keeper of forgotten promises.',
+            personality: 'Quiet, curious, stubbornly loyal.', scenario: 'A letter arrives from a city that no longer exists.',
+            first_mes: '*Iris turns the envelope over.* "You recognize this seal?"',
+            mes_example: '<START>\n{{user}}: *I fold the map.* "Which way?"\n{{char}}: "East."\n{{user}}: "You said west before." *I stop.* "What changed?"\n{{char}}: *She points to the fresh tracks.*\n{{user}}: "Oh."\n{{char}}: "Keep close." *She leaves the road, listening.* "And leave that bell behind."',
+            tags: ['mystery'], alternate_greetings: ['"The letter was meant for you."'], group_only_greetings: ['"Are you all coming?"'], nickname: 'Iris', creator_notes: '', system_prompt: '', post_history_instructions: '',
+        };
+        return JSON.stringify({ fields: repair ? Object.fromEntries(wanted.map(k => [k, fields[k]])) : fields, rationale: 'Simulated test output.' });
+    },
+};
+globalThis.SillyTavern = { getContext: () => ctx };
+const env = { toast: text => { document.querySelector('#notice').textContent = text; }, confirm: async () => true, getTokenCount: async text => text.length / 4 };
+function App() {
+    const project = useStore(store);
+    const [selection, setSelection] = useState(null);
+    const [response, setResponse] = useState(mode);
+    return html`<p><strong>UI test only — simulated model, disposable project. Refresh resets everything.</strong></p>
+        <div class="test-bar"><label>Model response <select aria-label="Model response" value=${response} onChange=${e => { mode = e.currentTarget.value; setResponse(mode); }}>
+            <option value="success">Successful expansion</option><option value="short">Still short</option><option value="error">Connection error</option><option value="slow">Slow response for cancellation</option>
+        </select></label><button onClick=${() => { store.undo(); setSelection(null); }}>Undo test change</button><span id="calls">Model requests: 0</span></div>
+        <p id="notice" role="status"></p>
+        <p>Saved characters: ${project.characters.length} · Originals unchanged: ${JSON.stringify(project.characters.slice(0, 2)) === originals ? 'yes' : 'NO'}</p>
+        <${CharactersArea} project=${project} store=${store} env=${env} selection=${selection} setSelection=${setSelection} select=${(type, id, tab) => setSelection({ type, id, tab })} />
+        <details><summary>Last model request</summary><pre id="request"></pre></details>`;
+}
+render(html`<${App} />`, document.querySelector('#root'));
+</script></html>

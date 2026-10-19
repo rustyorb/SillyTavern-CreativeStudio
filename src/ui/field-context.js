@@ -18,6 +18,7 @@ export function characterContext({ store, project, ch, field }) {
             const current = store.get().id === project.id && findArtifact(store.get(), 'characters', ch.id);
             if (!current) throw new Error('This character is no longer open in this project.');
             return { card: current.card, field, contextFields: selectedContextFields(current, field),
+                minimumWords: current.remix?.minimums?.[field] ?? 0, lockedFacts: current.remix?.locks ?? {},
                 voiceDirection: ['first_mes', 'mes_example', 'alternate_greetings', 'group_only_greetings'].includes(field) ? current.voiceDirection ?? '' : '' };
         },
         panel: html`<fieldset class="cs-field-context">

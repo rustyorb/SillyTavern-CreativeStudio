@@ -6,8 +6,8 @@
 
 ### *Start with a character. Build the world around them.*
 
-**New in 0.3:** a task-focused Home, visual character and picture libraries, a simpler writing editor,
-portrait uploads, guided export, searchable Help, and clearly labeled Delete controls with Undo.
+**New in 1.2.0:** remix two imported characters into one original character, lock details such as average age,
+set editable word minimums per field, and generate dialogue with varied speech, action and narration.
 **[Start here: the short guide](docs/QUICKSTART.md).** Advanced tools remain available when you need them.
 
 <sub>Feature screenshots show earlier releases. The <a href="#-start-here">current navigation guide</a> below matches 0.3.</sub>
@@ -106,8 +106,10 @@ details when you need them, then use **Export & use** to download a card or send
 | Import a PNG, CHARX or JSON card | **Home → Import a card**, or drop the file into the studio |
 | Improve a character already in SillyTavern | **Home → From SillyTavern**, or the feather in ST's character panel |
 | Generate from an idea | **Home → Generate with AI**; choose **Character & openings**, **Character & world**, or **Complete toolkit** |
+| Create someone new from two existing characters | **Characters → Remix two characters**; choose two imported cards, set optional locks and word minimums, then **Generate new character** |
 | Write or revise a field with AI | **Ask AI** beside the field; enter your direction, check which earlier fields to include, and choose **Add to it**, **Rewrite**, or **3 takes** |
 | Set an accent or speech quirk | **Voice → Voice direction — highest priority**. This steers AI-written dialogue and openings ahead of other voice/style clues. |
+| Check or adjust a remix's length | Open the new character → **Remix · word counts**. Actual counts update as you edit; short fields are marked **Below minimum**. |
 | Upload a portrait or generate pictures | Open a character → **Pictures**. Write a **Picture prompt** (or use **Help write prompt**) and press **Generate picture**. **Upload portrait…** adds an existing image. |
 | Make expression sprites | **Pictures → Expressions — same character, different moods**. Check the reference portrait, choose a face adapter, then **Generate one expression** before making a set. Needs ComfyUI and adapter models. |
 | Set up an image generator | **AI setup → Images**; select ComfyUI or SillyTavern Image Generation |

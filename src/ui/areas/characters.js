@@ -29,6 +29,7 @@ import { MediaView } from './media.js';
 import { CharacterPictures } from '../character-pictures.js';
 import { CHARACTER_TABS, TAB_HELP, characterProgress } from '../../core/workflow.js';
 import { CharacterLibrary } from '../character-library.js';
+import { RemixLauncher, RemixReport } from '../character-remix.js';
 import { navigateStudio } from '../guide.js';
 
 export function CharactersArea(props) {
@@ -53,6 +54,7 @@ function CharacterHome({ store, env, project, select }) {
             <h3><${Icon} name="user-pen" /> Characters & scenarios</h3>
             <div class="cs-spacer"></div>
             <${Button} icon="user-plus" label="New character" onClick=${() => add(newCharacter('New character'), 'New character')} />
+            <${RemixLauncher} key=${project.id} store=${store} env=${env} project=${project} select=${select} />
             <${Button} icon="masks-theater" label="New scenario" title="Scenario / narrator card" onClick=${() => add(newCharacter('New scenario', null, { kind: 'scenario' }), 'New scenario')} />
             <${Button} icon="file-import" label="Import card…" title="A character card: PNG, CHARX or JSON. You can also drop a card anywhere on the studio." onClick=${() => openCardImport()} />
             <${Button} icon="user-plus" label="From SillyTavern…" title="Bring in one of your SillyTavern characters with its lorebook and sprites" onClick=${openPullPicker} />
@@ -199,6 +201,7 @@ function CharacterEditor(props) {
                 <${Button} small kind="primary" icon="file-import" label="Import card…" onClick=${() => openCardImport({ replaceId: ch.id })} />
             </div>`}
             ${ch.concept && tab === 'core' && html`<${ConceptPanel} ...${ep} />`}
+            ${ch.remix && ['core', 'greetings', 'examples', 'prompts'].includes(tab) && html`<${RemixReport} store=${store} project=${project} ch=${ch} />`}
             ${tab === 'core' && html`<${CoreTab} ...${ep} />`}
             ${tab === 'greetings' && html`<${GreetingsTab} ...${ep} />`}
             ${tab === 'examples' && html`<${ExamplesTab} ...${ep} />`}
@@ -385,7 +388,7 @@ function ExamplesTab(p) {
         <div class="cs-row"><${Button} small label="Structured" ariaPressed=${!raw} onClick=${() => setRaw(false)} /><${Button} small label="Raw text" ariaPressed=${raw} onClick=${() => setRaw(true)} /></div>
         <${AiField} ...${p} field="mes_example" label="Example dialogue" rows=${14} hint="Blocks separated by <START>."
             renderEditor=${raw ? null : actions => html`<${StringList} label="Example dialogues" items=${parts} multiline placeholder=${'{{user}}: …\n{{char}}: …'} onChange=${v => setData('mes_example', joinExamples(v))} addLabel="Add example" actions=${actions}
-                hint="Each block becomes a <START> section. Show the voice; don't narrate {{user}}." />`} />
+                hint="Each block becomes a <START> section. Vary speech, action and narration within and between both speakers' turns; examples should teach a flexible voice." />`} />
     `;
 }
 
