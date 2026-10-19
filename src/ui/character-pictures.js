@@ -1,5 +1,5 @@
 // One character-owned picture workspace, shared by both Pictures entry points.
-import { html, useState, useRef, Button, Icon, Badge, TextArea, Select, Toggle, Section, Modal, pickFile, fileBytes, cx } from './kit.js';
+import { html, useState, useRef, useEffect, Button, Icon, Badge, TextArea, Select, Toggle, Section, Modal, pickFile, fileBytes, cx } from './kit.js';
 import { imageSettings, imageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../st/comfy.js';
 import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative, pictureInstruction, sizeFor } from '../core/comfy.js';
 import { useAiTask, AiStatus } from './ai.js';
@@ -11,6 +11,7 @@ import { saveMedia, saveCharacterPicture, mediaBytes, toPngBytes } from './media
 import { pictureDraft, pictureTarget } from '../core/pictures.js';
 import { navigateStudio } from './guide.js';
 import { DeletePictureButton } from './deletion.js';
+import { ensureCharacterPortrait } from './portrait.js';
 
 /**
  * Pictures for a character: the AI writes the prompts (in the style the checkpoint wants), ComfyUI (or SillyTavern's
@@ -36,6 +37,18 @@ export function CharacterPictures({ store, env, project, ch }) {
     const [setupOpen, setSetupOpen] = useState(false);
     const [result, setResult] = useState('');
     const [error, setError] = useState('');
+    const [portraitLoading, setPortraitLoading] = useState(false);
+    const [portraitError, setPortraitError] = useState('');
+    const [portraitAttempt, setPortraitAttempt] = useState(0);
+    useEffect(() => {
+        let active = true;
+        setPortraitLoading(true);
+        setPortraitError('');
+        ensureCharacterPortrait(store, env, project.id, ch.id, { retry: portraitAttempt > 0 })
+            .catch(e => { if (active) setPortraitError(e.message); })
+            .finally(() => { if (active) setPortraitLoading(false); });
+        return () => { active = false; };
+    }, [store, env, project.id, ch.id, portraitAttempt]);
     const job = useRef(false);
     const [spriteSet, setSpriteSet] = useState('core');
     const [progress, setProgress] = useState(null);
@@ -189,6 +202,16 @@ export function CharacterPictures({ store, env, project, ch }) {
     const shownMood = spriteOf(mood) ? mood : figure ? (spriteOf('neutral') ? 'neutral' : Object.keys(sprites)[0]) : '';
     const backdrop = !scene && figure ? (ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null) ?? gallery[0] ?? null : null;
     return html`
+        <section class="cs-portrait-start" aria-label="Current character portrait">
+            ${avatarPic ? html`<img src=${avatarPic.url} alt=${`${d.name}'s current portrait`} />` : html`<div class="cs-portrait-placeholder"><${Icon} name="user" /></div>`}
+            <div><strong>${avatarPic ? `${d.name}’s current portrait` : portraitLoading ? 'Loading character portrait…' : 'No portrait selected'}</strong>
+                <p>${avatarPic ? 'This is the picture on your character card and the reference for expressions. Generate more pictures below, or upload a replacement.' : portraitLoading ? 'Checking for this character’s existing image.' : 'Upload a portrait here or generate one below. The first portrait becomes the picture on your character card.'}</p>
+                ${avatarPic && ch.portraitSource?.mediaId === avatarPic.id && html`<p class="cs-small cs-muted">Loaded from this character’s PNG in SillyTavern.</p>`}
+                ${!avatarPic && portraitError && html`<p role="alert" class="cs-err-text">Could not load the existing portrait: ${portraitError}</p>
+                    <${Button} small label="Retry loading portrait" onClick=${() => setPortraitAttempt(v => v + 1)} disabled=${portraitLoading} />`}
+                <${Button} icon="file-image" label=${avatarPic ? 'Replace portrait…' : 'Upload portrait…'} onClick=${uploadPortrait} disabled=${!!busy} />
+            </div>
+        </section>
         <section class="cs-picture-compose" aria-label="Create a picture">
             <div class="cs-row"><h3>Create a picture for ${d.name || 'this character'}</h3><span class="cs-spacer"></span>
                 <${Button} small icon="plug" label=${ready ? 'Image settings' : 'Set up image generation'} onClick=${() => setSetupOpen(true)} />
@@ -199,7 +222,7 @@ export function CharacterPictures({ store, env, project, ch }) {
                 hint="This draft is saved with this character. You can edit it before generating."
                 onChange=${prompt => setDraft({ prompt })} />
             <div class="cs-picture-actions">
-                <${Button} kind="primary" icon="image" label=${busy === 'picture' ? 'Generating picture…' : 'Generate picture'} onClick=${() => run('picture', () => paintOne({ ...draft }))} disabled=${!!busy || ai.busy || !ready || !draft.prompt.trim()} />
+                <${Button} kind="primary" icon="image" label=${busy === 'picture' ? 'Generating picture…' : 'Generate picture'} onClick=${() => run('picture', () => paintOne({ ...draft }))} disabled=${!!busy || portraitLoading || ai.busy || !ready || !draft.prompt.trim()} />
                 <${Button} icon="wand-magic-sparkles" label=${busy === 'prompt' ? 'Writing prompt…' : 'Help write prompt'} onClick=${() => run('prompt', () => writePrompts())} disabled=${!!busy || ai.busy} />
                 <span class="cs-muted cs-small">Prompt help writes words; Generate picture makes the image.</span>
             </div>
@@ -220,11 +243,6 @@ export function CharacterPictures({ store, env, project, ch }) {
             </${Section}>
         </section>
         ${setupOpen && html`<${Modal} title="Image generation settings" onClose=${() => setSetupOpen(false)}><${ImageSetup} env=${env} /><div class="cs-row"><${Button} kind="primary" label="Done — back to picture" onClick=${() => setSetupOpen(false)} /></div></${Modal}>`}
-        <div class="cs-portrait-start">
-            ${avatarPic ? html`<img src=${avatarPic.url} alt=${`${d.name}'s portrait`} />` : html`<div class="cs-portrait-placeholder"><${Icon} name="user" /></div>`}
-            <div><strong>${avatarPic ? 'Portrait on the character card' : 'Already have a portrait?'}</strong><p>${avatarPic ? 'Generate more pictures above, or upload a replacement. Previous pictures stay in the gallery.' : 'Upload it here, or generate a portrait above. The first portrait becomes the picture on your exported card.'}</p>
-                <${Button} icon="file-image" label=${avatarPic ? 'Replace portrait…' : 'Upload portrait…'} onClick=${uploadPortrait} disabled=${!!busy} /></div>
-        </div>
         ${prompts.length > 0 && html`<${Section} title=${`Saved prompt ideas (${prompts.length})`} open=${false}>
             <p class="cs-muted cs-small">Choose an idea to put it in the prompt box above. You can edit it before generating.</p>
             <${Button} icon="images" label=${busy === 'all' ? 'Generating saved prompts…' : 'Generate all saved prompts'} onClick=${paintAll} disabled=${!!busy || ai.busy || !ready} />

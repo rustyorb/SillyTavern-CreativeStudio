@@ -152,7 +152,7 @@ export function unusedMedia(project) {
  */
 function withoutMedia(c, gone) {
     let next = c;
-    if (gone.has(c.avatarMediaId)) next = { ...next, avatarMediaId: '' };
+    if (gone.has(c.avatarMediaId)) next = { ...next, avatarMediaId: '', portraitAutoLoadBlocked: true };
     const gallery = c.links?.media;
     if (gallery?.some(id => gone.has(id))) next = { ...next, links: { ...next.links, media: gallery.filter(id => !gone.has(id)) } };
     if (c.sprites && Object.values(c.sprites).some(id => gone.has(id))) {
