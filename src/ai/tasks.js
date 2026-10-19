@@ -6,6 +6,7 @@
 
 import { CONTENT_LEVELS, DEFAULT_CONTENT } from '../core/content.js';
 import { entriesOf } from '../core/lorebook.js';
+import { fieldContextText, contextValue } from '../core/field-context.js';
 
 const S = { type: 'string' };
 const SA = { type: 'array', items: { type: 'string' } };
@@ -26,8 +27,8 @@ export const PROMPT_DEFAULTS = {
 
     'character.ideate': 'You generate DISTINCT character concepts. Each candidate must differ in at least three of: archetype, voice register, central contradiction, relationship stance toward {{user}}, and the kind of story it produces. Do not produce minor variations of one idea.',
     'character.expand': 'You turn a concept into Character Card V3 field drafts. Description carries appearance, background, behaviour and speech patterns; scenario states the current situation; first_mes opens a scene with a hook and room for {{user}} to act (roughly 120-300 words); mes_example uses <START> blocks with {{char}}/{{user}} lines demonstrating voice, each speaker on its own line; tags are 3-8 short genre/theme words. Keep permanent fields (description+personality+scenario) within about 1500 tokens.',
-    'character.rewrite-field': 'You write or rewrite one field of a character card so it fits everything else on the card. Follow the author\'s instruction closely; keep what they did not ask to change unless it clashes with the card.',
-    'character.extend-field': 'You add to one field of a character card. Everything already in the field stays exactly as the author wrote it: you write only the new material, in the same format (prose, list, brackets…), voice and tense, consistent with the rest of the card, without repeating anything that is already there.',
+    'character.rewrite-field': 'You write or rewrite one field of a character card using the selected earlier fields as context. Follow the author\'s instruction closely; preserve established details unless they ask to change them. Do not invent facts from fields that were not supplied.',
+    'character.extend-field': 'You add to one field of a character card. Everything already in the field stays exactly as the author wrote it: you write only the new material, in the same format (prose, list, brackets…), voice and tense, consistent with the selected earlier fields, without repeating anything that is already there. Follow the author\'s direction and do not invent facts from fields that were not supplied.',
     'character.greetings': 'You write alternate greetings. Each must open a DIFFERENT situation (place, time, mood, or relationship state), end with an opening for {{user}}, and stay consistent with the card.',
     'character.critique': 'You are a strict but constructive card reviewer. Look for: contradictions between fields; vague adjectives instead of behaviour; greetings that act for {{user}}; missing scenario pressure; example dialogue that does not show the voice; wasted tokens; lore that contradicts the card. When a concrete fix is short, give it as replacement text for the field. Judge craft, not morality: mature or adult material is legitimate within the project\'s content rating, so only flag content that breaks that rating.',
 
@@ -112,6 +113,12 @@ export function contentRule(p = P0, content = DEFAULT_CONTENT) {
 /** A system prompt: the shared writing rules (for creative tasks), the task's instruction, the content rule. */
 function system(p, key, { craft = true, content = DEFAULT_CONTENT, rules = true } = {}) {
     return [craft ? p('shared.craft') : '', p(key), rules ? contentRule(p, content) : ''].filter(Boolean).join('\n');
+}
+
+/** Spoken style is explicitly steered by the author, independently of the selected card facts. */
+function voiceInstruction(direction = '') {
+    if (!String(direction).trim()) return '';
+    return `\n\nVOICE DIRECTION — highest priority for spoken dialogue:\n${String(direction).trim()}\nApply this to the character's spoken lines in examples and openings. It takes precedence over conflicting accent, diction, speech habits or style directions in the selected fields, general writing guidance, and other edit instructions. Preserve the other established character facts. Keep narration distinct unless this voice direction explicitly includes it.`;
 }
 
 /**
@@ -308,10 +315,10 @@ export const TASKS = {
         schema: cardFieldsSchema(CORE_CARD_FIELDS),
         // Schema-constrained decoding produces the smallest valid object, so the fields we need must be required.
         schemaFor: ({ only = null } = {}) => cardFieldsSchema(only?.length ? only : CORE_CARD_FIELDS),
-        build: ({ concept, card, style = '', only = null, content }, p = P0) => {
+        build: ({ concept, card, voiceDirection, style = '', only = null, content }, p = P0) => {
             const want = only?.length ? only : CORE_CARD_FIELDS;
             return {
-                system: system(p, 'character.expand', { content }),
+                system: system(p, 'character.expand', { content }) + voiceInstruction(voiceDirection),
                 user: `Concept:\n${typeof concept === 'string' ? concept : JSON.stringify(concept, null, 1)}\n${card ? `\nExisting card (keep what works, stay consistent with it):\n${cardDigest(card)}\n` : ''}${style ? `\nStyle requirements: ${style}\n` : ''}\n${only?.length ? `These fields are still EMPTY and must be written now: ${want.join(', ')}. Return exactly these fields, each non-empty.` : `Write every one of these fields, each non-empty: ${want.join(', ')}. You may add system_prompt or creator_notes if useful.`} Include a short rationale.`,
             };
         },
@@ -326,12 +333,12 @@ export const TASKS = {
             type: 'object', required: ['variants'],
             properties: { variants: { type: 'array', minItems: 1, items: { type: 'object', required: ['text', 'rationale'], properties: { label: S, text: S, rationale: S } } } },
         },
-        build: ({ card, field, instruction, count = 3, content }, p = P0) => {
+        build: ({ card, field, contextFields, voiceDirection, instruction, count = 3, content }, p = P0) => {
             const current = String(card?.data?.[field] ?? '').trim();
             const many = count > 1 ? `Give ${count} variants, each a meaningfully different approach with a label and a one-sentence rationale.` : 'Give exactly 1 variant: your best version, with a label and a one-sentence rationale.';
             return {
-                system: system(p, 'character.rewrite-field', { content }),
-                user: `Card:\n${cardDigest(card)}\n\nField: ${CARD_FIELDS[field] ?? field}\n${current ? `Current value:\n"""\n${current}\n"""` : 'The field is empty: write it from scratch, consistent with the rest of the card.'}\n\nAuthor's instruction: ${instruction || (current ? 'Make it stronger for roleplay.' : 'Write it well for roleplay.')}\n${many}`,
+                system: system(p, 'character.rewrite-field', { content }) + (['first_mes', 'mes_example', 'group_only_greetings'].includes(field) ? voiceInstruction(voiceDirection) : ''),
+                user: `${fieldContextText(card, field, contextFields)}\n\nField: ${FIELD_LABELS[field] ?? field}\n${current ? `Current value:\n"""\n${current}\n"""` : 'The field is empty: write it from scratch, consistent with the selected context.'}\n\nAuthor's instruction: ${instruction || (current ? 'Make it stronger for roleplay.' : 'Write it well for roleplay.')}\n${many}`,
             };
         },
     },
@@ -345,9 +352,9 @@ export const TASKS = {
             type: 'object', required: ['addition', 'joiner', 'rationale'],
             properties: { addition: { type: 'string', minLength: 1 }, joiner: { type: 'string', enum: Object.keys(JOINERS) }, rationale: S },
         },
-        build: ({ card, field, instruction, content }, p = P0) => ({
-            system: system(p, 'character.extend-field', { content }),
-            user: `Card:\n${cardDigest(card)}\n\nField: ${CARD_FIELDS[field] ?? field}\nWhat the field says now (it stays exactly as it is; you only write what gets added):\n"""\n${String(card?.data?.[field] ?? '').trim()}\n"""\n\nWhat to add: ${instruction || 'more concrete, specific detail the roleplay can use'}\nReturn only the new text as "addition", and say how it joins the existing text: "new paragraph", "same paragraph" (continues the last paragraph) or "new line" (e.g. another list item). Add a one-sentence rationale.`,
+        build: ({ card, field, contextFields, voiceDirection, instruction, content }, p = P0) => ({
+            system: system(p, 'character.extend-field', { content }) + (['first_mes', 'mes_example', 'group_only_greetings'].includes(field) ? voiceInstruction(voiceDirection) : ''),
+            user: `${fieldContextText(card, field, contextFields)}\n\nField: ${FIELD_LABELS[field] ?? field}\nWhat the field says now (it stays exactly as it is; you only write what gets added):\n"""\n${String(card?.data?.[field] ?? '').trim()}\n"""\n\nWhat to add: ${instruction || 'more concrete, specific detail the roleplay can use'}\nReturn only the new text as "addition", and say how it joins the existing text: "new paragraph", "same paragraph" (continues the last paragraph) or "new line" (e.g. another list item). Add a one-sentence rationale.`,
         }),
     },
 
@@ -366,9 +373,9 @@ export const TASKS = {
             s.properties.greetings.minItems = count;
             return s;
         },
-        build: ({ card, count = 3, direction = '', content }, p = P0) => ({
-            system: system(p, 'character.greetings', { content }),
-            user: `Card:\n${cardDigest(card)}\n\nExisting greetings to avoid repeating: first message${card?.data?.alternate_greetings?.length ? ` and ${card.data.alternate_greetings.length} alternates` : ''}.\n${direction ? `Direction: ${direction}\n` : ''}Write ${count} greetings. Mark group_only true only if the greeting only makes sense in a group chat.`,
+        build: ({ card, contextFields, voiceDirection, count = 3, direction = '', content }, p = P0) => ({
+            system: system(p, 'character.greetings', { content }) + voiceInstruction(voiceDirection),
+            user: `${fieldContextText(card, 'alternate_greetings', contextFields)}\n\nExisting alternate greetings (keep these; add different situations):\n${contextValue(card?.data?.alternate_greetings) || '(none yet)'}\n${direction ? `Direction: ${direction}\n` : ''}Write ${count} greetings. Mark group_only true only if the greeting only makes sense in a group chat.`,
         }),
     },
 

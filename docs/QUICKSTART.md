@@ -24,6 +24,16 @@ Beside a text field, **Ask AI** opens a place for your directions:
 - **Rewrite** replaces it with a revised version.
 - **3 takes** gives you versions to compare.
 
+**Use earlier fields** lets you choose the context for that field, with every box checked initially. Personality
+gets Name and Description; Scenario adds Personality; later fields build on the preceding writing fields in the
+same way. Your direction and the current field's text are always included. Uncheck anything you do not want used.
+These choices are remembered separately for each field and character.
+
+For an accent, spoken quirk or specific dialogue rule, open **Voice** and fill **Voice direction — highest priority**.
+It leads over other voice/style instructions for AI-written dialogue and openings. The AI controls and context
+boxes work in both **Structured** and **Raw text**. For example: “Clipped London accent; questions end in ‘yeah?’;
+keep slang light.” This is writing guidance, not a text-to-speech setting.
+
 The top bar tells you whether AI edits apply directly or wait for review. You can undo project changes with **Ctrl+Z** outside text fields. **Advanced tools → AI instructions** lets you inspect, change and reset the writing instructions.
 
 ## Add a portrait and world details

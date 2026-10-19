@@ -10,6 +10,7 @@ import { emptyCcPreset, mergeGeneratedPrompts } from '../core/preset.js';
 import { defaultScript } from '../core/regex.js';
 import { newSet, addQr, QR_FLAGS } from '../core/qr.js';
 import { characterPrompt, characterNegative } from '../core/comfy.js';
+import { selectedContextFields } from '../core/field-context.js';
 import { dialText, cardDigest, CARD_FIELDS, CORE_CARD_FIELDS, entryTitle, entryKeys, tidyTags } from './tasks.js';
 
 const STRING_FIELDS = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions'];
@@ -71,7 +72,7 @@ export const STEPS = [
             const card = char(p, s)?.card;
             // Filling gaps in an existing card: ask only for what is empty instead of rewriting everything and discarding it.
             const gaps = s.fillOnly ? CORE_CARD_FIELDS.filter(k => (Array.isArray(card?.data[k]) ? !card.data[k].length : !String(card?.data[k] ?? '').trim())) : [];
-            return { concept: { ...s.concept, story: brief(s) }, card, style: styleFrom(dials), ...(gaps.length ? { only: gaps } : {}) };
+            return { concept: { ...s.concept, story: brief(s) }, card, voiceDirection: char(p, s)?.voiceDirection, style: styleFrom(dials), ...(gaps.length ? { only: gaps } : {}) };
         },
         missing: (p, s) => MUST_HAVE.filter(k => !String(char(p, s)?.card.data[k] ?? '').trim()),
         apply: (project, v, s) => {
@@ -93,7 +94,7 @@ export const STEPS = [
     },
     {
         id: 'greetings', label: 'Alternate openings', task: 'character.greetings', needs: ['card'],
-        build: (s, p, dials) => ({ card: char(p, s).card, count: 3, direction: `Make each opening a different situation from the premise. ${styleFrom(dials)}` }),
+        build: (s, p, dials) => ({ card: char(p, s).card, voiceDirection: char(p, s).voiceDirection, contextFields: selectedContextFields(char(p, s), 'alternate_greetings'), count: 3, direction: `Make each opening a different situation from the premise. ${styleFrom(dials)}` }),
         apply: (project, v, s) => {
             const d = char(project, s).card.data;
             const alt = v.greetings.filter(g => !g.group_only).map(g => g.text).filter(Boolean);

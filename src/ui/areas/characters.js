@@ -8,6 +8,7 @@ import { pushProposals, PendingFor, isHandsFree } from '../proposals.js';
 import { startGeneration, developCharacter, isRunning, missingSteps } from '../generator.js';
 import { openPullPicker } from '../st-pull.js';
 import { useAiAssist } from '../ai-assist.js';
+import { characterContext } from '../field-context.js';
 import { newRun } from '../../ai/pipeline.js';
 import {
     findArtifact, editArtifactField, upsertArtifact, newCharacter, logHistory, acceptProposal, rejectProposal, cardForSt,
@@ -213,22 +214,25 @@ function CharacterEditor(props) {
 
 /**
  * A card text field with the same AI controls whether it is empty or not: say what you want, then Add to it (every
- * word already there stays), Rewrite, or compare 3 takes. An empty field is written from the rest of the card.
+ * word already there stays), Rewrite, or compare 3 takes. Earlier fields are explicit, selectable context.
  */
-function AiField({ store, env, project, ch, field, label, rows = 6, hint, d, setData }) {
+function AiField({ store, env, project, ch, field, label, rows = 6, hint, d, setData, singleLine = false, renderEditor }) {
     const cardNow = () => store.get().characters.find(c => c.id === ch.id)?.card ?? ch.card;
+    const context = characterContext({ store, project, ch, field });
     const assist = useAiAssist({
         store, project, label, value: d[field],
         target: { type: 'characters', id: ch.id, path: `card.data.${field}` },
         current: () => cardNow().data[field],
-        rewrite: { id: 'character.rewrite-field', args: (instruction, count) => ({ card: cardNow(), field, instruction, count }) },
-        add: { id: 'character.extend-field', args: instruction => ({ card: cardNow(), field, instruction }) },
-        tidy: text => (field === 'mes_example' ? tidyExamples(text, ch.card.data.name) : text),
-        emptyHint: `What should the ${label.toLowerCase()} say? (optional: the AI works from the rest of the card)`,
+        rewrite: { id: 'character.rewrite-field', args: (instruction, count) => ({ ...context.args(), instruction, count }) },
+        add: { id: 'character.extend-field', args: instruction => ({ ...context.args(), instruction }) },
+        tidy: text => (field === 'mes_example' ? tidyExamples(text, ch.card.data.name) : singleLine ? text.replace(/\s+/g, ' ').trim() : text),
+        emptyHint: `What should the ${label.toLowerCase()} say? (the checked fields below provide context)`,
+        contextPanel: context.panel,
     });
     const actions = html`<span class="cs-muted">${fieldStats(d[field]).words}w</span>${assist.actions}`;
-    return html`<div class="cs-stack" ref=${assist.ref}>
-        <${TextArea} label=${label} value=${d[field]} onChange=${v => setData(field, v)} rows=${rows} hint=${hint} counter=${env.countTokens} actions=${actions} />
+    return html`<div class="cs-stack" ref=${assist.ref} data-card-field=${field}>
+        ${renderEditor ? renderEditor(actions) : singleLine ? html`<${TextInput} label=${label} value=${d[field]} onChange=${v => setData(field, v)} hint=${hint} meta=${actions} />`
+            : html`<${TextArea} label=${label} value=${d[field]} onChange=${v => setData(field, v)} rows=${rows} hint=${hint} counter=${env.countTokens} actions=${actions} />`}
         ${assist.panel}
         ${assist.status}
         <${PendingFor} store=${store} project=${project} type="characters" id=${ch.id} path=${`card.data.${field}`} />
@@ -240,7 +244,7 @@ function ConceptPanel({ store, env, project, ch }) {
     const ai = useAiTask(store);
     const [style, setStyle] = useState('');
     const expand = async () => {
-        const r = await ai.run('character.expand', { concept: c, card: ch.card, style });
+        const r = await ai.run('character.expand', { concept: c, card: ch.card, voiceDirection: ch.voiceDirection, style });
         if (!r) return;
         const group = uid('grp');
         const specs = [];
@@ -300,7 +304,7 @@ function CoreTab(p) {
     };
     return html`
         <div class="cs-grid">
-            <${TextInput} label="Name" value=${d.name} onChange=${v => setData('name', v)} placeholder="What are they called?" hint="The name used in your story." />
+            <${AiField} ...${p} key="name" field="name" label="Name" singleLine=${true} hint="The name used in your story." />
             <${Select} label="Card type" value=${ch.kind} options=${[{ value: 'character', label: 'A character' }, { value: 'scenario', label: 'A scenario / narrator' }]} onChange=${v => store.update(pr => editArtifactField(pr, 'characters', ch.id, 'kind', v), 'kind')} />
         </div>
         <${Section} title="Tags, credit & version" open=${false}><div class="cs-grid">
@@ -339,8 +343,9 @@ function GreetingsTab(p) {
     const { d, setData, store, ch, project } = p;
     const ai = useAiTask(store);
     const [direction, setDirection] = useState('');
+    const context = characterContext({ store, project, ch, field: 'alternate_greetings' });
     const gen = async () => {
-        const r = await ai.run('character.greetings', { card: ch.card, count: 3, direction });
+        const r = await ai.run('character.greetings', { ...context.args(), count: 3, direction });
         if (!r) return;
         const alt = r.value.greetings.filter(g => !g.group_only);
         const grp = r.value.greetings.filter(g => g.group_only);
@@ -357,6 +362,7 @@ function GreetingsTab(p) {
                 <input class="text_pole" style="flex:1" placeholder="Direction for new openings (optional): different place, time, mood, relationship stage…" value=${direction} onInput=${e => setDirection(e.currentTarget.value)} aria-label="Greeting direction" />
                 <${Button} kind="ai" icon="wand-magic-sparkles" label="Generate 3 distinct openings" onClick=${gen} disabled=${ai.busy} />
             </div>
+            ${context.panel}
             <${AiStatus} ai=${ai} />
         </div>
         <${PendingFor} store=${store} project=${project} type="characters" id=${ch.id} path="card.data.alternate_greetings" />
@@ -368,15 +374,18 @@ function GreetingsTab(p) {
 }
 
 function ExamplesTab(p) {
-    const { d, setData } = p;
+    const { d, setData, ch, setPath } = p;
     const [raw, setRaw] = useState(false);
     const parts = splitExamples(d.mes_example);
     return html`
+        <${TextArea} label="Voice direction — highest priority" value=${ch.voiceDirection ?? ''} rows=${3} stats=${false}
+            placeholder="For example: a clipped London accent, dry humour, and questions ending in ‘yeah?’ Keep slang light."
+            hint="Use this for accents, speech quirks and dialogue rules. AI-written dialogue and openings follow this ahead of other voice or style instructions. Other character facts still apply. Saved with this character."
+            onChange=${value => setPath('voiceDirection', value, 'Edited priority voice direction')} />
         <div class="cs-row"><${Button} small label="Structured" ariaPressed=${!raw} onClick=${() => setRaw(false)} /><${Button} small label="Raw text" ariaPressed=${raw} onClick=${() => setRaw(true)} /></div>
-        ${raw ? html`<${AiField} ...${p} field="mes_example" label="Example dialogue" rows=${14} hint="Blocks separated by <START>." />`
-            : html`<${StringList} label="Example dialogues" items=${parts} multiline placeholder=${'{{user}}: …\n{{char}}: …'} onChange=${v => setData('mes_example', joinExamples(v))} addLabel="Add example"
-                hint="Each block becomes a <START> section. Show the voice; don't narrate {{user}}." />
-               <${PendingFor} store=${p.store} project=${p.project} type="characters" id=${p.ch.id} path="card.data.mes_example" />`}
+        <${AiField} ...${p} field="mes_example" label="Example dialogue" rows=${14} hint="Blocks separated by <START>."
+            renderEditor=${raw ? null : actions => html`<${StringList} label="Example dialogues" items=${parts} multiline placeholder=${'{{user}}: …\n{{char}}: …'} onChange=${v => setData('mes_example', joinExamples(v))} addLabel="Add example" actions=${actions}
+                hint="Each block becomes a <START> section. Show the voice; don't narrate {{user}}." />`} />
     `;
 }
 

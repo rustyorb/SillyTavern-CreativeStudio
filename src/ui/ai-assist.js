@@ -26,7 +26,7 @@ export const QUICK_DIRECTIONS = [
  * @returns {{ ref, actions, panel, status }} a ref for the element around the field (it glows when AI text lands), the
  *   header buttons, the direction panel (when open) and the AI status line
  */
-export function useAiAssist({ store, project, label, value, target, current, rewrite: rw, add: ad, tidy = t => t, emptyHint }) {
+export function useAiAssist({ store, project, label, value, target, current, rewrite: rw, add: ad, tidy = t => t, emptyHint, contextPanel }) {
     const [open, setOpen] = useState(false);
     const [instruction, setInstruction] = useState('');
     const ai = useAiTask(store);
@@ -38,7 +38,7 @@ export function useAiAssist({ store, project, label, value, target, current, rew
     const glow = landed => {
         if (!landed?.length) return;
         setTimeout(() => {
-            const el = ref.current?.querySelector('textarea');
+            const el = ref.current?.querySelector('textarea, input');
             if (!el) return;
             el.classList.remove('cs-landed');
             void el.offsetWidth;
@@ -76,6 +76,7 @@ export function useAiAssist({ store, project, label, value, target, current, rew
     const panel = open && html`<div class="cs-ai-box">
         <input class="text_pole" placeholder=${empty ? (emptyHint ?? `What should the ${name} say? (optional: the AI works from its context)`) : 'What should the AI do? e.g. "add a fear of deep water", "make the voice drier", "mention the scar"'} value=${instruction}
             onInput=${e => setInstruction(e.currentTarget.value)} onKeyDown=${e => { if (e.key === 'Enter') { e.preventDefault(); primary(); } }} aria-label=${`Direction for the ${name}`} />
+        ${contextPanel}
         <div class="cs-row">
             ${empty
                 ? html`<${Button} kind="gild" icon="wand-magic-sparkles" label="Write it" title="Write the field (with your direction, if any)" onClick=${() => rewrite(1)} disabled=${ai.busy} />`
@@ -83,7 +84,7 @@ export function useAiAssist({ store, project, label, value, target, current, rew
                     <${Button} icon="rotate" label="Rewrite" title="Replaces the text with a new version (Ctrl+Z brings the old one back)" onClick=${() => rewrite(1)} disabled=${ai.busy} />`}
             <${Button} icon="clone" label="3 takes" title="Three different versions to pick from" onClick=${() => rewrite(3)} disabled=${ai.busy} />
             ${!empty && html`<span class="cs-chips" role="group" aria-label="Quick directions">${QUICK_DIRECTIONS.map(q => html`<button key=${q.label} type="button" class="cs-chip" disabled=${ai.busy}
-                title=${q.mode === 'add' ? 'Add to it: more detail' : `Rewrite: ${q.how}`} onClick=${() => (q.mode === 'add' ? add(q.how) : rewrite(1, q.how))}>${q.label}</button>`)}</span>`}
+                title=${q.mode === 'add' ? 'Add to it: more detail' : `Rewrite: ${q.how}`} onClick=${() => { const how = [instruction, q.how].filter(Boolean).join('\n'); return q.mode === 'add' ? add(how) : rewrite(1, how); }}>${q.label}</button>`)}</span>`}
         </div>
         <div class="cs-muted cs-small">${isHandsFree(project) ? 'Lands straight away; Ctrl+Z undoes it.' : 'Waits in the inspector for your OK (Review mode).'} Enter = ${empty ? 'Write it' : 'Add to it'}.</div>
     </div>`;

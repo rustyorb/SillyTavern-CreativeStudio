@@ -21,7 +21,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-174%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-181%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -106,7 +106,8 @@ details when you need them, then use **Export & use** to download a card or send
 | Import a PNG, CHARX or JSON card | **Home → Import a card**, or drop the file into the studio |
 | Improve a character already in SillyTavern | **Home → From SillyTavern**, or the feather in ST's character panel |
 | Generate from an idea | **Home → Generate with AI**; choose **Character & openings**, **Character & world**, or **Complete toolkit** |
-| Write or revise a field with AI | **Ask AI** beside the field; enter your direction and choose **Add to it**, **Rewrite**, or **3 takes** |
+| Write or revise a field with AI | **Ask AI** beside the field; enter your direction, check which earlier fields to include, and choose **Add to it**, **Rewrite**, or **3 takes** |
+| Set an accent or speech quirk | **Voice → Voice direction — highest priority**. This steers AI-written dialogue and openings ahead of other voice/style clues. |
 | Upload a portrait or generate pictures | Open a character → **Pictures**. Write a **Picture prompt** (or use **Help write prompt**) and press **Generate picture**. **Upload portrait…** adds an existing image. |
 | Make expression sprites | **Pictures → Expressions — same character, different moods**. Check the reference portrait, choose a face adapter, then **Generate one expression** before making a set. Needs ComfyUI and adapter models. |
 | Set up an image generator | **AI setup → Images**; select ComfyUI or SillyTavern Image Generation |
@@ -198,9 +199,21 @@ words, and pick what happens to the text that's already there:
 | **Add to it** | Stays word for word. The AI writes only the new part, in the field's own format (W++ brackets, dialogue, prose), as a new paragraph, a new line or the end of the last sentence |
 | **Rewrite** | Replaced by a new version that follows your direction. Ctrl+Z brings the old one back |
 | **3 takes** | Three different versions side by side; keep the one you like |
-| **More detail · Tighter · Punchier** | One click, no typing |
+| **More detail · Tighter · Punchier** | Adds the quick direction to anything you typed |
 
-An empty field gets **Write it** instead, written from everything else on the card.
+An empty field gets **Write it** instead. **Use earlier fields** shows checkboxes, all on by default, in card
+authoring order: Name → Description → Personality → Scenario → First message → Example dialogue → Creator notes
+→ System prompt → Post-history instructions → Alternate greetings. Personality can use Name and Description;
+Scenario can use those plus Personality. Only checked earlier fields are sent, in full, alongside your direction
+and the field's current text. Later fields are excluded. Choices are remembered per character and per target field;
+they also apply to **3 takes** and quick directions. Empty fields remain selectable for when you fill them in.
+
+On **Voice**, **Voice direction — highest priority** holds accents, speech quirks and dialogue rules, such as
+“clipped London accent; end questions with ‘yeah?’; keep slang light.” It overrides conflicting voice/style
+directions in the checked fields or the ordinary edit instruction while keeping other character facts intact.
+It applies to example dialogue, first messages, alternate openings and dialogue drafted by **Build the rest for me**.
+Both **Structured** and **Raw text** expose the same AI controls. Context choices and voice direction are Studio
+preferences; the generated card text exports normally without adding nonstandard fields to the V2/V3 card.
 
 ### Your instructions, your rating
 
@@ -614,7 +627,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-174 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+181 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline, workflow guidance, draft persistence, and deletion/Undo behavior. A live suite runs inside a
 SillyTavern tab against its server and creates then removes `CSTEST_*` items. Run it on a separate local test
