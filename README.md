@@ -21,7 +21,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-181%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-195%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -286,7 +286,12 @@ Choose **Picture type**, write a **Picture prompt**, and press **Generate pictur
 optional writing step beside the same prompt box; it does not generate an image. **Image settings** opens the
 image generator settings directly. If no generator is configured, the Generate button remains visible with setup guidance.
 
-Upload an existing portrait with **Upload portrait…**. The **Expressions** section shows the exact portrait used
+The character's **current portrait** appears at the top of Pictures automatically. An existing card image is reused;
+if an older import lost its portrait link, Studio can recover the PNG from SillyTavern using its saved source or a
+unique match of the original name, description and first message. It never chooses by name alone or replaces a
+portrait you already selected. Deliberately deleted portraits stay deleted.
+
+Use **Upload portrait…** or **Replace portrait…** to choose another image. The **Expressions** section shows the exact portrait used
 as the face reference. Choose **Use as avatar** under a saved picture to change that reference. Start with
 **Generate one expression**, inspect it, then generate the missing moods. **Delete picture** and
 **Delete expression** are directly below each image, with confirmation and Undo. **Delete character** removes
@@ -409,7 +414,7 @@ workshop has its own **AI buttons** for when you only want one piece.
 <tr>
 <td valign="top">
 <img src="docs/assets/shots/stage.webp" alt="Images tab: the character's transparent joy sprite standing inside the painted workshop scene, above the prompts" />
-<b>Character → Pictures</b>: the earlier screenshot shows the stage. The current page starts with an editable prompt and <i>Generate picture</i>; the stage is inside <i>Expression sprites</i>.
+<b>Character → Pictures</b>: the earlier screenshot shows the stage. The current page starts with the character's current portrait, followed by an editable prompt and <i>Generate picture</i>; the stage is inside <i>Expression sprites</i>.
 </td>
 <td valign="top">
 <img src="docs/assets/shots/sprites.webp" alt="Eight expression sprites on a transparency checkerboard with Paint missing, New face and Install in SillyTavern" />
@@ -627,7 +632,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-181 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+195 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline, workflow guidance, draft persistence, and deletion/Undo behavior. A live suite runs inside a
 SillyTavern tab against its server and creates then removes `CSTEST_*` items. Run it on a separate local test
