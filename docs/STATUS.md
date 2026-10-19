@@ -1,4 +1,4 @@
-# Status — Creative Studio 0.3.0 for SillyTavern 1.19.0
+# Status — Creative Studio 1.2.1 for SillyTavern 1.19.0
 
 ## 0.3 usability update
 
@@ -18,6 +18,15 @@ The verification below records the earlier feature releases; provider and image-
 Deletion follow-up (2026-10-18): 164 unit tests passed. Local Chromium checks at 1440×1000 and 390×844 verified cancel, keyboard dismissal, whole-set/preset removal, individual replies/custom prompts (including unused prompts), profile references, all three regex scopes, character-link restoration and protection against stale Undo notifications. Mobile testing found and fixed a clipped confirmation dialog. No relevant browser errors or warnings remained. Temporary test data was removed and the original local project restored; installed SillyTavern items were not changed.
 
 ## Verification summary
+
+Release 1.2.1 (2026-10-19): 220 unit tests passed. Avatar selection keeps old and new pictures available,
+changes only the intended character, and supports separate Undo/Redo steps. Further generated portraits keep
+the chosen avatar. CHARX export uses that avatar even when the imported card has a main icon, preserving
+other asset bytes. Local browser checks reproduced the old overflowing controls and layered portrait/expression
+preview, then verified click and keyboard selection, matching portrait/reference images, Undo/Redo, and
+contained controls at desktop and 390px widths using disposable pictures. The real local SillyTavern page
+also showed 1.2.1, the selected Seraphina portrait, and contained controls with no browser errors. No model or
+GPU requests were made. The README and quick guide describe the new Choose avatar section.
 
 Release 1.2.0 (2026-10-19): 215 unit tests passed. New coverage verifies source preservation and fresh identity,
 local age averaging, missing/ambiguous age handling, word counting, bounded expansion, original greeting

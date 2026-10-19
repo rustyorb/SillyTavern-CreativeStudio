@@ -4,6 +4,7 @@ import { pictureDraft, workingCharacter } from '../src/core/pictures.js';
 import { createProject, newCharacter, removeCharacter, editArtifactField } from '../src/core/project.js';
 import { createStore } from '../src/ui/store.js';
 import { saveCharacterPicture } from '../src/ui/media.js';
+import * as pictures from '../src/core/pictures.js';
 
 function fixture() {
     const project = createProject('Picture test');
@@ -14,6 +15,52 @@ function fixture() {
 }
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 const env = { storage: { saveMedia: async (projectId, id, ext) => `user/files/${projectId}-${id}.${ext}` } };
+
+test('choosing an avatar keeps both pictures, changes one character only, and supports Undo and Redo', () => {
+    const { project, store, a, b } = fixture();
+    project.media = ['old', 'new'].map(id => ({ id, kind: 'image', url: `${id}.png` }));
+    a.avatarMediaId = 'old'; // Older imported avatars were not always in links.media.
+    a.links.media = ['new'];
+    a.sprites = { joy: 'old-expression' };
+    const before = structuredClone(project);
+    store.update(p => pictures.selectCharacterAvatar(p, project.id, a.id, 'new'), 'choose avatar', { merge: false });
+    const chosen = store.get().characters[0];
+    assert.equal(chosen.avatarMediaId, 'new');
+    assert.deepEqual(new Set(chosen.links.media), new Set(['old', 'new']));
+    assert.deepEqual(chosen.sprites, a.sprites);
+    assert.deepEqual(store.get().characters[1], b);
+    assert.deepEqual(store.get().media, before.media);
+    assert.deepEqual(project, before, 'selection is immutable');
+    assert.equal(pictures.selectCharacterAvatar(store.get(), project.id, a.id, 'new'), store.get(), 'reselecting is a no-op');
+    store.undo();
+    assert.deepEqual(store.get(), before);
+    store.redo();
+    assert.equal(store.get().characters[0].avatarMediaId, 'new');
+    store.update(p => pictures.selectCharacterAvatar(p, project.id, a.id, 'old'), 'choose avatar', { merge: false });
+    assert.equal(store.get().characters[0].avatarMediaId, 'old');
+    assert.equal(store.get().characters[0].links.media.length, 2);
+    store.undo();
+    assert.equal(store.get().characters[0].avatarMediaId, 'new', 'each choice is a separate Undo step');
+});
+
+test('a stale avatar choice cannot change another project or select missing/non-image media', () => {
+    const { project, a } = fixture();
+    project.media = [{ id: 'text', kind: 'file', url: 'notes.txt' }];
+    assert.throws(() => pictures.selectCharacterAvatar(project, 'other-project', a.id, 'text'), /project changed/);
+    assert.throws(() => pictures.selectCharacterAvatar(project, project.id, 'removed', 'text'), /character was removed/);
+    assert.throws(() => pictures.selectCharacterAvatar(project, project.id, a.id, 'missing'), /picture.*available/i);
+    assert.throws(() => pictures.selectCharacterAvatar(project, project.id, a.id, 'text'), /image/i);
+});
+
+test('a generated portrait leaves the chosen avatar and existing expressions alone', async () => {
+    const { project, store, a } = fixture();
+    a.avatarMediaId = 'chosen';
+    a.sprites = { joy: 'joy-picture' };
+    const media = await saveCharacterPicture(env, store, project.id, a.id, png, { purpose: 'avatar' });
+    assert.equal(store.get().characters[0].avatarMediaId, 'chosen');
+    assert.deepEqual(store.get().characters[0].sprites, a.sprites);
+    assert.ok(store.get().characters[0].links.media.includes(media.id));
+});
 
 test('pictures follow the working character, never the first of several or a replacement after deletion', () => {
     const { project, a, b } = fixture();

@@ -84,11 +84,15 @@ export function exportCard(kind, { card, topLevelExtras = {}, image = null, asse
             const files = { ...assetFiles };
             const c = structuredClone(card);
             c.data.assets ??= [];
-            if (image && !c.data.assets.some(a => a.type === 'icon')) {
-                const p = suggestedAssetPath('icon', 'main', 'png');
+            if (image) {
+                // The selected avatar wins over an imported main icon. Preserve old files because
+                // other assets (e.g. an expression) may still reference the original bytes.
+                let p = suggestedAssetPath('icon', 'main', 'png');
+                let suffix = 1;
+                while (Object.hasOwn(files, p)) p = suggestedAssetPath('icon', `main-${suffix++}`, 'png');
                 files[p] = image;
-                c.data.assets.push({ type: 'icon', uri: `embeded://${p}`, name: 'main', ext: 'png' });
-                notes.push('Added the card image as the main icon asset.');
+                c.data.assets = [{ type: 'icon', uri: `embeded://${p}`, name: 'main', ext: 'png' }, ...c.data.assets.filter(a => !(a.type === 'icon' && a.name === 'main'))];
+                notes.push('Used the selected avatar as the main icon asset.');
             }
             if (!c.data.assets.length) c.data.assets.push({ type: 'icon', uri: 'ccdefault:', name: 'main', ext: 'png' });
             const r = writeCharx(c, files);

@@ -23,6 +23,7 @@ import { clone, uid } from '../../core/bytes.js';
 import { importIntoSt, applyCardToSt, getStCharacter } from '../../st/live.js';
 import { jsonDiff } from '../../core/diff.js';
 import { saveMedia, mediaBytes, toPngBytes } from '../media.js';
+import { selectCharacterAvatar } from '../../core/pictures.js';
 import { recordBackup } from '../inspector.js';
 import { openCardImport } from '../importer.js';
 import { MediaView } from './media.js';
@@ -466,7 +467,8 @@ function MetaTab({ store, env, project, ch, d, setData, setPath }) {
         const f = await pickFile('image/*');
         if (!f) return;
         const { media, apply } = await saveMedia(env, store.get(), await fileBytes(f), { name: `${d.name} avatar`, role: 'avatar' });
-        store.update(pr => editArtifactField(apply(pr), 'characters', ch.id, 'avatarMediaId', media.id, { summary: 'Set avatar image' }), 'set avatar');
+        if (store.get().id !== project.id || !findArtifact(store.get(), 'characters', ch.id)) return;
+        store.update(pr => selectCharacterAvatar(apply(pr), project.id, ch.id, media.id), 'set avatar', { merge: false });
     };
     const ml = Object.entries(d.creator_notes_multilingual ?? {});
     const setMl = entries => setData('creator_notes_multilingual', entries.length ? Object.fromEntries(entries) : undefined);

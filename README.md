@@ -6,11 +6,13 @@
 
 ### *Start with a character. Build the world around them.*
 
-**New in 1.2.0:** remix two imported characters into one original character, lock details such as average age,
+**Fixed in 1.2.1:** choose one avatar directly from your saved pictures, with clear selection, separate buttons,
+and the chosen portrait carried into card exports. Expression previews no longer layer a portrait behind a saved expression.
+**Also in 1.2:** remix two imported characters into one original character, lock details such as average age,
 set editable word minimums per field, and generate dialogue with varied speech, action and narration.
 **[Start here: the short guide](docs/QUICKSTART.md).** Advanced tools remain available when you need them.
 
-<sub>Feature screenshots show earlier releases. The <a href="#-start-here">current navigation guide</a> below matches 0.3.</sub>
+<sub>Feature screenshots show earlier releases. Follow the <a href="#-start-here">current navigation guide</a> below.</sub>
 
 A SillyTavern extension for importing, writing and improving characters, with optional AI help.
 Start with a character and its openings, add a world, or choose **Complete toolkit** to generate a linked roleplay:
@@ -21,7 +23,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-201%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-220%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -293,8 +295,11 @@ if an older import lost its portrait link, Studio can recover the PNG from Silly
 unique match of the original name, description and first message. It never chooses by name alone or replaces a
 portrait you already selected. Deliberately deleted portraits stay deleted.
 
-Use **Upload portrait…** or **Replace portrait…** to choose another image. The **Expressions** section shows the exact portrait used
-as the face reference. Choose **Use as avatar** under a saved picture to change that reference. Start with
+At the top of Pictures, **Choose avatar** shows your saved pictures. Click the image you want: exactly one is marked
+**Current avatar**. **Upload portrait…** selects a new image from your computer. Previous portraits remain available,
+and Undo restores the previous choice. The selected image is used for PNG and CHARX exports, including cards with an older imported icon.
+The **Expressions** section shows the exact portrait used as the face reference. Existing expressions keep their images
+until you regenerate them; their preview is separate from the avatar and never puts the avatar behind an expression. Start with
 **Generate one expression**, inspect it, then generate the missing moods. **Delete picture** and
 **Delete expression** are directly below each image, with confirmation and Undo. **Delete character** removes
 the whole character instead.

@@ -454,10 +454,17 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-studio .cs-test-image { max-width: 360px; max-height: 260px; border-radius: 6px; border: 1px solid var(--cs-line); object-fit: cover; }
 
 /* Images tab */
-.cs-gallery { display: flex; flex-wrap: wrap; gap: 10px; }
-.cs-gallery-item { margin: 0; width: 180px; display: flex; flex-direction: column; gap: 4px; }
-.cs-gallery-item img { width: 180px; height: 240px; object-fit: cover; border-radius: 6px; border: 1px solid var(--cs-line); display: block; }
-.cs-gallery-item figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; font-size: 0.85em; color: var(--cs-dim); }
+.cs-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 14px; }
+.cs-gallery-item { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--cs-line); border-radius: 8px; }
+.cs-gallery-item.is-avatar { border-color: var(--cs-accent); box-shadow: 0 0 0 1px var(--cs-accent); }
+.cs-gallery-item img { width: 100%; height: 210px; object-fit: contain; border-radius: 5px; display: block; background: var(--cs-bg); }
+.cs-avatar-choice { position: relative; display: flex; flex-direction: column; gap: 8px; cursor: pointer; text-align: center; font-size: 0.9em; font-weight: 600; }
+.cs-avatar-choice input { position: absolute; top: 8px; left: 8px; margin: 0; width: 20px; height: 20px; accent-color: var(--cs-accent); cursor: pointer; }
+.cs-avatar-choice:focus-within { outline: 2px solid var(--cs-accent); outline-offset: 3px; border-radius: 5px; }
+.is-avatar .cs-avatar-choice > span { color: var(--cs-accent); }
+.cs-gallery-item figcaption { display: flex; flex-direction: column; align-items: stretch; gap: 6px; font-size: 0.85em; color: var(--cs-dim); }
+.cs-gallery-item .cs-picture-purpose { overflow-wrap: anywhere; }
+.cs-gallery-item figcaption > .cs-btn, .cs-gallery-item .cs-delete-control > .cs-btn { width: 100%; white-space: normal; }
 .cs-sprites { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
 /* Tiles show the face (head and shoulders); hover or focus shows the whole figure. */
 .cs-sprite { position: relative; height: 150px; padding: 0; overflow: hidden; cursor: pointer; font: inherit;
@@ -471,10 +478,6 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 /* The stage: painted scene as the set, the character standing in it. */
 .cs-stage { position: relative; height: clamp(260px, 42vh, 470px); border: 1px solid var(--cs-line); border-radius: 8px; overflow: hidden;
     background-color: var(--cs-bg); background-size: cover; background-position: center; box-shadow: inset 0 0 140px 40px rgba(0, 0, 0, 0.75); }
-.cs-stage-backdrop { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(22px) brightness(0.42) saturate(1.2); }
-.cs-stage-light { position: absolute; left: 50%; bottom: -10%; width: 64%; height: 42%; transform: translateX(-50%); pointer-events: none;
-    background: radial-gradient(ellipse at center, rgba(255, 184, 120, 0.38), rgba(236, 120, 150, 0.16) 45%, transparent 72%); }
-.cs-stage.has-backdrop::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; box-shadow: inset 0 0 140px 40px rgba(0, 0, 0, 0.72); }
 .cs-stage-figure, .cs-stage-caption { z-index: 2; }
 .cs-stage-figure { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); height: 94%; max-width: 70%; object-fit: contain;
     filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.7)); }
