@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { readCardChunks, writeCardChunks, extractChunks, blankPng, isPng } from '../src/core/png.js';
 import { normalizeToV3, validateCardV3, toSpecV2, toSpecV3, toSillyTavernShape, detectCardVersion, emptyCardV3, splitExamples, joinExamples, tidyExamples } from '../src/core/card.js';
 import { readCharx, writeCharx, suggestedAssetPath } from '../src/core/charx.js';
+import { exportCard } from '../src/core/cardio.js';
 import { textToBase64, base64ToText, stableStringify } from '../src/core/bytes.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -139,6 +140,37 @@ test('CHARX missing asset file is diagnosed, not fatal', () => {
     assert.equal(diagnostics.length, 1);
     const back = readCharx(bytes);
     assert.ok(back.diagnostics.some(d => d.includes('missing')));
+});
+
+test('CHARX uses the chosen avatar even when an imported card already has a main icon', () => {
+    const card = emptyCardV3('Chosen face');
+    const oldPath = suggestedAssetPath('icon', 'main', 'png');
+    const oldImage = fixture('seraphina.png');
+    const chosen = blankPng();
+    card.data.assets = [
+        { type: 'icon', uri: `embeded://${oldPath}`, name: 'main', ext: 'png' },
+        { type: 'emotion', uri: `embeded://${oldPath}`, name: 'joy', ext: 'png' },
+    ];
+    const before = structuredClone(card);
+    const output = exportCard('charx', { card, image: chosen, assetFiles: { [oldPath]: oldImage } });
+    const back = readCharx(output.bytes);
+    const main = back.assets.find(a => a.asset.type === 'icon' && a.asset.name === 'main').bytes;
+    assert.equal(main.length, chosen.length, 'the selected image replaces the old main icon');
+    assert.deepEqual(main, chosen);
+    assert.deepEqual(back.assets.find(a => a.asset.type === 'emotion').bytes, oldImage, 'other assets keep their own bytes');
+    assert.deepEqual(back.files[oldPath], oldImage, 'the original file is preserved');
+    assert.deepEqual(card, before, 'export does not mutate the project card');
+    assert.equal(back.assets.filter(a => a.asset.type === 'icon' && a.asset.name === 'main').length, 1);
+});
+
+test('CHARX preserves an existing icon when no avatar image is supplied', () => {
+    const card = emptyCardV3('Original');
+    const path = 'assets/icon/images/custom.png';
+    card.data.assets = [{ type: 'icon', uri: `embeded://${path}`, name: 'main', ext: 'png' }];
+    const original = fixture('seraphina.png');
+    const back = readCharx(exportCard('charx', { card, assetFiles: { [path]: original } }).bytes);
+    assert.deepEqual(back.assets[0].bytes, original);
+    assert.deepEqual(back.card.data.assets, card.data.assets);
 });
 
 test('example dialogue split/join', () => {

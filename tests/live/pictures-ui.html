@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Avatar selection test — disposable pictures</title>
+<link rel="stylesheet" href="../../style.css">
+<style>
+body { margin: 0; background: #171717; color: #ddd; font: 15px system-ui; }
+* { box-sizing: border-box; }
+.text_pole { background: #242424; color: #ddd; border: 1px solid #555; padding: 6px; border-radius: 4px; }
+#root { padding: 20px; --cs-gap: 8px; --cs-line: #444; --cs-panel: #202020; --cs-bg: #171717; --cs-dim: #aaa; --cs-accent: #d3973d; --cs-err: #ee7777; --cs-ok: #77bd88; }
+.test-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 15px; }
+.cs-area-body { padding: 0; }
+</style>
+<div id="root" class="cs-root"></div>
+<script type="module">
+// Disposable browser fixture: real picture component, image persistence/selection and Undo.
+// Only image bytes/storage are simulated. No user data, external calls or GPU jobs.
+import { html, render } from '../../vendor/preact-htm.mjs';
+import { createProject, newCharacter } from '../../src/core/project.js';
+import { createStore, useStore } from '../../src/ui/store.js';
+import { CharacterPictures } from '../../src/ui/character-pictures.js';
+import { saveCharacterPicture } from '../../src/ui/media.js';
+function drawing(label, color) {
+    return 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="${color}"/><circle cx="150" cy="130" r="65" fill="#f3d2ad"/><path d="M55 350 Q55 210 150 210 Q245 210 245 350" fill="#343746"/><text x="150" y="380" text-anchor="middle" fill="white" font-family="sans-serif" font-size="22">${label}</text></svg>`);
+}
+const project = createProject('Disposable avatar test');
+const ch = newCharacter('Mara');
+const original = { id: 'original', name: 'Original portrait', kind: 'image', mime: 'image/png', role: 'avatar', url: drawing('ORIGINAL', '#515a97') };
+const sprite = { id: 'joy', name: 'Saved joy expression', kind: 'image', mime: 'image/png', role: 'sprite', label: 'joy', referenceMediaId: original.id, method: 'plus-face', url: drawing('OLD EXPRESSION', '#865b79') };
+ch.avatarMediaId = original.id; // Legacy imports may not link their avatar into links.media.
+ch.sprites = { joy: sprite.id };
+project.characters = [ch];
+project.media = [original, sprite];
+const store = createStore(project);
+globalThis.SillyTavern = { getContext: () => ({ extensionSettings: {} }) };
+const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const env = {
+    storage: { saveMedia: async () => '/scripts/extensions/third-party/creative-studio/tests/fixtures/avatar-new.svg' },
+    toast: text => { document.querySelector('#notice').textContent = text; },
+    confirm: async () => true,
+};
+function App() {
+    const p = useStore(store);
+    return html`<p><strong>Avatar selection test — disposable pictures, no generation service.</strong></p>
+        <div class="test-bar"><button onClick=${() => saveCharacterPicture(env, store, project.id, ch.id, png, { purpose: 'avatar' })}>Simulate generated portrait</button><button onClick=${() => store.undo()}>Undo test change</button><button onClick=${() => store.redo()}>Redo test change</button></div>
+        <p id="notice" role="status"></p>
+        <main class="cs-area-body"><${CharacterPictures} store=${store} env=${env} project=${p} ch=${p.characters[0]} /></main>`;
+}
+render(html`<${App} />`, document.querySelector('#root'));
+</script></html>

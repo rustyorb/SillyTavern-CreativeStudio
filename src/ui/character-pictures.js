@@ -1,5 +1,5 @@
 // One character-owned picture workspace, shared by both Pictures entry points.
-import { html, useState, useRef, useEffect, Button, Icon, Badge, TextArea, Select, Toggle, Section, Modal, pickFile, fileBytes, cx } from './kit.js';
+import { html, useState, useRef, useEffect, Button, Icon, TextArea, Select, Toggle, Section, Modal, pickFile, fileBytes, cx } from './kit.js';
 import { imageSettings, imageReady, familyOf, paint, paintSprites, paintFromPicture, installSprites } from '../st/comfy.js';
 import { FAMILIES, EXPRESSIONS, CORE_EXPRESSIONS, randomSeed, characterPrompt, characterNegative, pictureInstruction, sizeFor } from '../core/comfy.js';
 import { useAiTask, AiStatus } from './ai.js';
@@ -8,7 +8,7 @@ import { contentOf, imageRating } from '../core/content.js';
 import { findArtifact, editArtifactField } from '../core/project.js';
 import { stSpriteFolder } from '../st/live.js';
 import { saveMedia, saveCharacterPicture, mediaBytes, toPngBytes } from './media.js';
-import { pictureDraft, pictureTarget } from '../core/pictures.js';
+import { pictureDraft, pictureTarget, selectCharacterAvatar } from '../core/pictures.js';
 import { navigateStudio } from './guide.js';
 import { DeletePictureButton } from './deletion.js';
 import { ensureCharacterPortrait } from './portrait.js';
@@ -74,12 +74,18 @@ export function CharacterPictures({ store, env, project, ch }) {
     const prompts = ch.imagePrompts ?? [];
     const sprites = ch.sprites ?? {};
     const spriteIds = new Set(Object.values(sprites));
-    const gallery = project.media.filter(m => ((ch.links?.media ?? []).includes(m.id) || m.id === ch.avatarMediaId) && !spriteIds.has(m.id));
+    const gallery = project.media.filter(m => m.kind === 'image' && (m.id === ch.avatarMediaId || ((ch.links?.media ?? []).includes(m.id) && !spriteIds.has(m.id))));
     const stLinked = ch.origin?.kind === 'st' ? ch.origin.avatar : ch.stAvatar;
     // Legacy spriteSource='fresh' never overrides the character's visible portrait reference.
     const avatarPic = ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null;
     const fromAvatar = !!avatarPic;
     const adapter = ch.expressionAdapter ?? 'plus-face';
+    const chooseAvatar = mediaId => {
+        try {
+            store.update(p => selectCharacterAvatar(p, project.id, ch.id, mediaId), 'choose avatar', { merge: false });
+            env.toast(`Avatar selected for ${d.name}. Ctrl+Z restores the previous choice.`, 'ok');
+        } catch (e) { env.toast(e.message, 'error'); }
+    };
     const uploadPortrait = async () => {
         const file = await pickFile('image/png,image/jpeg,image/webp,image/gif');
         if (!file) return;
@@ -90,11 +96,7 @@ export function CharacterPictures({ store, env, project, ch }) {
             const bytes = await toPngBytes(await fileBytes(file));
             const { media, apply } = await saveMedia(env, project, bytes, { name: `${d.name} portrait`, role: 'avatar', mime: 'image/png' });
             if (store.get().id !== project.id || !findArtifact(store.get(), 'characters', ch.id)) return;
-            store.update(p => {
-                const current = findArtifact(p, 'characters', ch.id);
-                let next = editArtifactField(apply(p), 'characters', ch.id, 'avatarMediaId', media.id, { summary: 'Chose a portrait' });
-                return editArtifactField(next, 'characters', ch.id, 'links.media', [...new Set([...(current.links?.media ?? []), media.id])], { summary: 'Added portrait to gallery' });
-            }, 'upload portrait', { merge: false });
+            store.update(p => selectCharacterAvatar(apply(p), project.id, ch.id, media.id), 'upload portrait', { merge: false });
             env.toast('Portrait added. Previous pictures stay in the gallery. Ctrl+Z undoes this.', 'ok');
         } catch (e) { env.toast(`Could not add that picture: ${e.message}`, 'error', 7000); }
         finally { setBusy(''); }
@@ -130,7 +132,7 @@ export function CharacterPictures({ store, env, project, ch }) {
         const r = (own && await paintFromPicture({ reference: await mediaBytes(env, own), instruction: pictureInstruction(pr.purpose, pr.prompt), canvas: scene ? sizeFor('background') : null }))
             ?? await paint({ prompt: characterPrompt({ appearance: current.appearance, prompt: pr.prompt, purpose: pr.purpose }), negative: characterNegative(pr), purpose: pr.purpose, rating });
         await saveCharacterPicture(env, store, project.id, ch.id, r.bytes, { purpose: pr.purpose, prompt: r.positive, seed: r.seed });
-        setResult(`Picture saved to ${d.name}’s gallery below.`);
+        setResult(`Picture saved. Choose it in “Choose avatar” above to use it on ${d.name}’s card.`);
         env.toast(`Picture generated for ${d.name}. Ctrl+Z undoes it.`, 'ok');
     };
     const run = async (key, fn) => {
@@ -196,23 +198,38 @@ export function CharacterPictures({ store, env, project, ch }) {
     });
 
     const labels = spriteSet === 'all' ? Object.keys(EXPRESSIONS) : CORE_EXPRESSIONS;
-    // The stage: the painted scene as the set, the character standing in it with the chosen mood.
-    const scene = gallery.find(m => /background|scene/i.test(m.purpose ?? m.name ?? ''));
+    // Only actual backgrounds belong behind expressions. A portrait must never become a second face.
+    const scene = gallery.find(m => m.id !== ch.avatarMediaId && /^(background|scene|location|landscape)$/i.test(m.purpose ?? ''));
     const spriteOf = label => (sprites[label] ? findArtifact(project, 'media', sprites[label]) : null);
     const figure = spriteOf(mood) ?? spriteOf('neutral') ?? spriteOf(Object.keys(sprites)[0]);
     const shownMood = spriteOf(mood) ? mood : figure ? (spriteOf('neutral') ? 'neutral' : Object.keys(sprites)[0]) : '';
-    const backdrop = !scene && figure ? (ch.avatarMediaId ? findArtifact(project, 'media', ch.avatarMediaId) : null) ?? gallery[0] ?? null : null;
     return html`
         <section class="cs-portrait-start" aria-label="Current character portrait">
             ${avatarPic ? html`<img src=${avatarPic.url} alt=${`${d.name}'s current portrait`} />` : html`<div class="cs-portrait-placeholder"><${Icon} name="user" /></div>`}
-            <div><strong>${avatarPic ? `${d.name}’s current portrait` : portraitLoading ? 'Loading character portrait…' : 'No portrait selected'}</strong>
-                <p>${avatarPic ? 'This is the picture on your character card and the reference for expressions. Generate more pictures below, or upload a replacement.' : portraitLoading ? 'Checking for this character’s existing image.' : 'Upload a portrait here or generate one below. The first portrait becomes the picture on your character card.'}</p>
+            <div><strong>${avatarPic ? `${d.name}’s current avatar` : portraitLoading ? 'Loading character portrait…' : 'No avatar selected'}</strong>
+                <p>${avatarPic ? 'This single image is your character card’s avatar and the reference for new expressions. Click a saved picture below to change it.' : portraitLoading ? 'Checking for this character’s existing image.' : 'Upload a portrait here or generate one below. The first portrait becomes the picture on your character card.'}</p>
                 ${avatarPic && ch.portraitSource?.mediaId === avatarPic.id && html`<p class="cs-small cs-muted">Loaded from this character’s PNG in SillyTavern.</p>`}
                 ${!avatarPic && portraitError && html`<p role="alert" class="cs-err-text">Could not load the existing portrait: ${portraitError}</p>
                     <${Button} small label="Retry loading portrait" onClick=${() => setPortraitAttempt(v => v + 1)} disabled=${portraitLoading} />`}
-                <${Button} icon="file-image" label=${avatarPic ? 'Replace portrait…' : 'Upload portrait…'} onClick=${uploadPortrait} disabled=${!!busy} />
+                <${Button} icon="file-image" label="Upload portrait…" onClick=${uploadPortrait} disabled=${!!busy} />
             </div>
         </section>
+        <${Section} title=${`Choose avatar — ${gallery.length} saved picture${gallery.length === 1 ? '' : 's'}`}>
+            <p class="cs-muted cs-small">Click the image you want as ${d.name}’s avatar. Only one is selected. Generating another picture keeps your current choice.</p>
+            ${!gallery.length && html`<p class="cs-muted">Your generated and uploaded pictures will appear here.</p>`}
+            <div class="cs-gallery" role="group" aria-label=${`Choose avatar for ${d.name}`}>${[...gallery].reverse().map(m => html`<figure key=${m.id} class=${cx('cs-gallery-item', m.id === ch.avatarMediaId && 'is-avatar')}>
+                <label class="cs-avatar-choice" title=${m.prompt ?? m.name}>
+                    <input type="radio" name=${`avatar-${ch.id}`} value=${m.id} aria-label=${`Use ${m.name} as avatar`} checked=${m.id === ch.avatarMediaId} onChange=${() => chooseAvatar(m.id)} />
+                    <img src=${m.url} alt=${m.name} loading="lazy" />
+                    <span>${m.id === ch.avatarMediaId ? '✓ Current avatar' : 'Choose as avatar'}</span>
+                </label>
+                <figcaption>
+                    <span class="cs-picture-purpose">${m.purpose ?? m.name}</span>
+                    <${Button} small icon="image" label="Details" onClick=${() => navigateStudio({ area: 'media', selection: { type: 'media', id: m.id } })} />
+                    <${DeletePictureButton} store=${store} env=${env} project=${project} media=${m} />
+                </figcaption>
+            </figure>`)}</div>
+        </${Section}>
         <section class="cs-picture-compose" aria-label="Create a picture">
             <div class="cs-row"><h3>Create a picture for ${d.name || 'this character'}</h3><span class="cs-spacer"></span>
                 <${Button} small icon="plug" label=${ready ? 'Image settings' : 'Set up image generation'} onClick=${() => setSetupOpen(true)} />
@@ -257,23 +274,11 @@ export function CharacterPictures({ store, env, project, ch }) {
                 <div class="cs-small">${pr.prompt}</div>${pr.negative && html`<div class="cs-small cs-muted">Negative: ${pr.negative}</div>`}
             </div>`)}
         </${Section}>`}
-        <${Section} title=${`${d.name}’s pictures (${gallery.length})`}>
-            <p class="cs-muted cs-small">These are saved pictures of ${d.name}, not separate characters. Choose the correct face as the portrait before making expressions.</p>
-            ${!gallery.length && html`<p class="cs-muted">Your generated and uploaded pictures will appear here.</p>`}
-            <div class="cs-gallery">${[...gallery].reverse().map(m => html`<figure key=${m.id} class="cs-gallery-item">
-                <a href=${m.url} target="_blank" rel="noopener"><img src=${m.url} alt=${m.name} title=${m.prompt ?? m.name} loading="lazy" /></a>
-                <figcaption>${m.purpose ?? ''}
-                    ${m.id !== ch.avatarMediaId ? html`<${Button} small label="Use as avatar" onClick=${() => store.update(p => editArtifactField(p, 'characters', ch.id, 'avatarMediaId', m.id, { summary: 'Set avatar image' }), 'set avatar')} />` : html`<${Badge} kind="ok">avatar</${Badge}>`}
-                    <${Button} small icon="image" label="Details" onClick=${() => navigateStudio({ area: 'media', selection: { type: 'media', id: m.id } })} />
-                    <${DeletePictureButton} store=${store} env=${env} project=${project} media=${m} />
-                </figcaption>
-            </figure>`)}</div>
-        </${Section}>
         <${Section} title=${`Expressions — same character, different moods (${Object.keys(sprites).length})`} open=${true}>
             <p class="cs-muted">Expressions are pictures for moods such as joy or anger. Make one, check the face, then generate the rest. Installing them lets SillyTavern display them beside your chat.</p>
             <div class="cs-expression-reference">
                 ${avatarPic && html`<img src=${avatarPic.url} alt=${`Expression reference for ${d.name}`} />`}
-                <div><strong>1. Reference portrait: ${d.name}</strong><p>${avatarPic ? 'Every expression uses this exact picture with a face-reference adapter. Choose “Use as avatar” under another saved picture to change it.' : 'Upload a portrait or choose “Use as avatar” under the correct picture above.'}</p>
+                <div><strong>1. Reference portrait: ${d.name}</strong><p>${avatarPic ? 'New expressions use this exact picture with a face-reference adapter. Select another image in Choose avatar above to change it. Saved expressions stay as they are until you regenerate them.' : 'Upload a portrait or select a saved picture in Choose avatar above.'}</p>
                 ${!avatarPic && html`<${Button} label="Upload reference portrait…" onClick=${uploadPortrait} disabled=${!!busy} />`}
                 <span class="cs-muted cs-small">Face matching is not perfect. Start with a clear, close portrait and check one result before making a set.</span></div>
             </div>
@@ -304,15 +309,15 @@ export function CharacterPictures({ store, env, project, ch }) {
                 <div class="cs-fuse">${Array.from({ length: progress.total }, (_, i) => html`<span key=${i} class=${cx('cs-fuse-seg', i < progress.done ? 'is-done' : i === progress.done ? 'is-running' : '')}></span>`)}</div>
                 <div class="cs-muted cs-small">${progress.current ? `Painting ${progress.current} (${progress.done + 1} of ${progress.total})` : `${progress.done} of ${progress.total}`}. ${fromAvatar ? 'Each one starts from the avatar.' : 'The first one also paints the base portrait.'}</div>
             </div>`}
-            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to show on the stage">${moodOrder(Object.keys(EXPRESSIONS).filter(l => sprites[l])).map(l => {
+            ${Object.keys(sprites).length > 0 && html`<div class="cs-sprites" role="group" aria-label="Expressions: choose one to preview">${moodOrder(Object.keys(EXPRESSIONS).filter(l => sprites[l])).map(l => {
                 const m = findArtifact(project, 'media', sprites[l]);
-                return m && html`<div key=${l} class="cs-expression-card"><button type="button" class=${cx('cs-sprite', `cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`, shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Show ${l} on the stage`} onClick=${() => setMood(l)}>
+                return m && html`<div key=${l} class="cs-expression-card"><button type="button" class=${cx('cs-sprite', `cs-mood-${MOOD_FAMILY[l] ?? 'plain'}`, shownMood === l && 'active')} aria-pressed=${shownMood === l} title=${`Preview ${l} expression`} onClick=${() => setMood(l)}>
                     <img src=${m.url} alt="" loading="lazy" /><span class="cs-sprite-label">${l}</span>
                 </button><${DeletePictureButton} store=${store} env=${env} project=${project} media=${m} label="Delete expression" /></div>`;
             })}</div>
             <div class="cs-muted cs-small">Sprites also travel inside CHARX exports as emotion assets; SillyTavern turns them back into sprites on import.</div>`}
-            ${(scene || figure) && html`<div class=${cx('cs-stage', backdrop && 'has-backdrop', shownMood && `cs-mood-${MOOD_FAMILY[shownMood] ?? 'plain'}`)} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${`${d.name}${shownMood ? `, ${shownMood}` : ''}${scene ? ', in the generated scene' : ''}`}>
-                ${backdrop && html`<div class="cs-stage-backdrop" style=${`background-image:url("${backdrop.url}")`}></div><div class="cs-stage-light"></div>`}
+            ${(scene || figure) && html`<p class="cs-muted cs-small">${figure ? `Expression preview — ${shownMood}. Selecting an expression here does not change your avatar.` : 'Background preview'}</p>
+            <div class=${cx('cs-stage', shownMood && `cs-mood-${MOOD_FAMILY[shownMood] ?? 'plain'}`)} style=${scene ? `background-image:url("${scene.url}")` : ''} role="img" aria-label=${figure ? `${d.name}: ${shownMood} expression preview` : `${d.name}: background preview`}>
                 ${shownMood && html`<div class="cs-stage-tint" aria-hidden="true"></div><div class="cs-stage-title" key=${shownMood} aria-hidden="true">${shownMood}</div>`}
                 ${figure && html`<img class="cs-stage-figure" src=${figure.url} alt="" />`}
                 <div class="cs-stage-caption"><span class="cs-stage-name">${d.name}</span>${shownMood && html`<span class="cs-stage-mood">${shownMood}</span>`}</div>
