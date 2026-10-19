@@ -48,6 +48,8 @@ For expressions, follow the three steps in **Expressions — same character, dif
 
 **Pictures → Project picture library** collects all project pictures. Search by picture or character name, filter expressions or unused pictures, and open a picture to see its uses or remove it. Removal is undoable. Returning to Pictures keeps your working character selected.
 
+If expression background removal fails, Studio can retry once with the background kept, retaining the same face reference. The result tells you when this happened. If the GPU runs out of memory, generation stops; free memory before trying one expression again. **Image settings → Transparent expression sprites** lets you turn background removal off yourself.
+
 **World** holds lorebooks. Each entry needs a title, trigger words and facts to recall. Link a book from the character’s World tab. Advanced matching, placement and activation settings are available in expandable sections.
 
 ## Try it and use it

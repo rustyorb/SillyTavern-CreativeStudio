@@ -97,6 +97,7 @@ export function ImageSetup({ env }) {
                 <label class="cs-toggle"><input type="checkbox" checked=${s.transparentSprites} onChange=${e => set({ transparentSprites: e.currentTarget.checked })} /><span>Transparent expression sprites (when ComfyUI has background removal)</span></label>
             </div>
             <div class="cs-small cs-muted">Expressions use the character’s selected portrait with IP-Adapter Plus Face (illustrated faces) or FaceID Plus v2 (photographic faces). Choose the method and try one mood in Pictures → Expressions. These require ComfyUI IPAdapter Plus, a matching adapter model and CLIP Vision; FaceID also needs InsightFace and its matching LoRA. Expression generation stops if the adapter cannot run.</div>
+            <div class="cs-small cs-muted">If background removal fails, Studio can keep the background while preserving the face reference. Out-of-memory errors stop generation so you can free GPU memory before trying again.</div>
             <div class="cs-row cs-small">
                 <span class="cs-muted">Workflow:</span>
                 ${s.workflow ? html`<${Badge} kind="accent">${s.workflow.name}</${Badge}><${Button} small label="Use the built-in one" onClick=${() => set({ workflow: null })} />`

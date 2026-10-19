@@ -174,8 +174,9 @@ export function CharacterPictures({ store, env, project, ch }) {
         setProgress(null);
         const made = Object.keys(res.sprites).length;
         const summary = res.cancelled ? `Stopped. ${made} expression(s) saved.` : failed.length ? `${made} expression(s) saved; generation stopped at ${failed[0]}.` : `${made} expression(s) saved using this portrait and ${adapter === 'faceid' ? 'FaceID Plus v2' : 'IP-Adapter Plus Face'}.`;
-        setExpressionStatus(summary);
-        env.toast(summary, failed.length ? 'error' : 'ok', 9000);
+        const report = [summary, ...(res.warnings ?? [])].join(' ');
+        setExpressionStatus(report);
+        env.toast(report, failed.length ? 'error' : 'ok', 9000);
     });
     const newFace = async () => {
         if (!(await env.confirm('Regenerate expressions from this portrait?', 'The current expressions are replaced one at a time. Undo in the top bar restores each replacement.'))) return;

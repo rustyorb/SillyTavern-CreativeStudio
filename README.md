@@ -21,7 +21,7 @@ You choose how much to build and what to change.
 
 [![SillyTavern 1.19+](https://img.shields.io/badge/SillyTavern-1.19%2B-e7b46a?style=for-the-badge&labelColor=1b1612)](https://github.com/SillyTavern/SillyTavern)
 [![No build step](https://img.shields.io/badge/install-paste%20one%20URL-5fe0cc?style=for-the-badge&labelColor=1b1612)](#-install-in-thirty-seconds)
-[![Tests](https://img.shields.io/badge/tests-195%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
+[![Tests](https://img.shields.io/badge/tests-201%20passing-58b56b?style=for-the-badge&labelColor=1b1612)](#-for-tinkerers)
 [![License AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-d6be96?style=for-the-badge&labelColor=1b1612)](LICENSE)
 
 **[Install](#-install-in-thirty-seconds)** &nbsp;·&nbsp;
@@ -307,7 +307,11 @@ gallery. **Project picture library** is the separate view of all project images,
   portrait conditions both the starting image and the sampling model. **IP-Adapter Plus Face** is the default
   for illustrated/anime faces; **FaceID Plus v2** is available for photographic faces. Identity and expression
   strength still vary with the portrait and checkpoint, so inspect one result first. The studio stops on adapter
-  failure instead of silently generating an unconditioned person. Background removal is optional.
+  failure instead of silently generating an unconditioned person. Background removal is optional. If its node
+  fails during generation, Studio retries once with the background kept and the same portrait, adapter and seed,
+  then keeps backgrounds for the rest of that run and reports the change. GPU out-of-memory errors stop without
+  retrying that failure; free GPU memory before trying again. You can also turn off **Transparent expression sprites**
+  in **Image settings**.
 - **Adapter setup.** Install [ComfyUI IPAdapter Plus](https://github.com/cubiq/ComfyUI_IPAdapter_plus), a compatible
   SDXL/SD1.5 checkpoint, the matching Plus Face or FaceID adapter, and CLIP Vision. FaceID also requires InsightFace
   and its matching LoRA. Custom text-to-image workflows do not replace the expression adapter workflow.
@@ -632,7 +636,7 @@ Plain ES modules, no build step. The UI is Preact + htm, and zip handling is ffl
 npm test
 ```
 
-195 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
+201 unit tests cover card formats (PNG chunks, V1/V2/V3, CHARX), the lorebook engine, the regex engine, presets,
 STscript and Quick Reply analysis, bundles, playtests, the AI instructions and content levels, the AI gateway (routes, lenient JSON, repair, timeouts) and the
 generation pipeline, workflow guidance, draft persistence, and deletion/Undo behavior. A live suite runs inside a
 SillyTavern tab against its server and creates then removes `CSTEST_*` items. Run it on a separate local test

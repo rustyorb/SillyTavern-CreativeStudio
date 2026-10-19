@@ -154,6 +154,24 @@ async function uploadToComfy(url, png, name) {
 /** ComfyUI refused the graph itself (unknown node, missing file), as opposed to failing while painting. */
 const rejected = e => /^ComfyUI returned an error\.?$/.test(String(e?.message ?? '').trim());
 
+const gpuMemoryFailure = e => /out[\s_-]*of[\s_-]*memory|CUBLAS_STATUS_ALLOC_FAILED|CUDA_ERROR_OUT_OF_MEMORY/i.test(e?.message ?? '');
+// SillyTavern's proxy prefixes execution errors with the failing node type and [node id].
+// Match that prefix, not CUDA words in an arbitrary traceback: only optional cutout nodes may be bypassed.
+const cutoutFailure = e => /^(?:ImageRemoveBackground\+|RemBGSession\+|TransparentBGSession\+|JoinImageWithAlpha|InvertMask)\s+\[[^\]\r\n]+\]/m.test(e?.message ?? '');
+
+function identityFailureMessage(error, identity) {
+    const detail = error?.message ?? 'No image returned.';
+    let help = '';
+    if (gpuMemoryFailure(error)) help = 'ComfyUI ran out of GPU memory. Free GPU memory by stopping other jobs or unloading unused models, then try one expression again. This memory failure was not retried.';
+    else if (cutoutFailure(error)) help = 'Background removal failed. Turn off Transparent expression sprites in Image settings and try again.';
+    else if (/libnvrtc|nvrtc.*(?:error|failed)/i.test(detail)) help = 'ComfyUI could not load or use a required CUDA library. Check the CUDA runtime in the environment running ComfyUI.';
+    else if (/IPAdapter|InsightFace|CLIP.?Vision|FaceID/i.test(detail)) help = identity === 'faceid'
+        ? 'FaceID Plus v2 needs InsightFace, the matching FaceID model and LoRA, and CLIP Vision. For illustrated faces, try IP-Adapter Plus Face.'
+        : 'Check that ComfyUI IPAdapter Plus, the matching PLUS FACE model and CLIP Vision are installed.';
+    else if (rejected(error)) help = 'ComfyUI rejected the expression workflow. Check its log for the missing node or model.';
+    return `${help ? `${help}\n\n` : ''}${detail}\nNo different-person fallback was used.`;
+}
+
 /** A FLUX Kontext model on the server and the VAE that goes with it, or null (found through SillyTavern's lists). */
 export async function comfyKontext(url) {
     const [models, vaes] = await Promise.all([stPost('/api/sd/comfy/models', { url }), stPost('/api/sd/comfy/vaes', { url }).catch(() => [])]);
@@ -252,6 +270,7 @@ async function paintIdentityExpressions({ look, labels, rating, seed, reference,
     const loaders = referenceLoaderOrder(s.referenceLoader?.url === s.url ? s.referenceLoader.node : '');
     const cutouts = s.transparentSprites ? [...CUTOUTS, null] : [null];
     const done = {};
+    const warnings = [];
     let chosen = null;
     let uploaded = '';
     for (const label of labels) {
@@ -261,6 +280,8 @@ async function paintIdentityExpressions({ look, labels, rating, seed, reference,
         const options = chosen ? [chosen] : cutouts.flatMap(rb => loaders.map(loader => ({ rb, loader })));
         let lastError;
         let bytes;
+        let keptBackground = false;
+        let retriedWithoutBackground = false;
         for (const option of options) {
             if (signal?.aborted) break;
             try {
@@ -268,29 +289,41 @@ async function paintIdentityExpressions({ look, labels, rating, seed, reference,
                     ? (uploaded ||= await uploadToComfy(s.url, ref.png, `cstudio_ref_${hashBytes(ref.png)}.png`)) : ref.base64;
                 const workflow = buildIdentityExpression({ adapter: identity, ckpt: s.ckpt, ...prompts,
                     width: ref.width, height: ref.height, seed, ...sampling, reference: { loader: option.loader, data }, removeBackground: option.rb });
-                bytes = await comfyRun(s.url, workflow, signal);
-                chosen = option;
+                try {
+                    bytes = await comfyRun(s.url, workflow, signal);
+                    chosen = option;
+                } catch (e) {
+                    if (signal?.aborted || !option.rb || gpuMemoryFailure(e) || !cutoutFailure(e)) throw e;
+                    onStatus(`Background removal failed for ${label}. Retrying with the background kept and the same face reference…`);
+                    if (signal?.aborted) break;
+                    retriedWithoutBackground = true;
+                    // Keep the sampler, seed, portrait, and adapter exactly as submitted. Only remove the cutout.
+                    for (const id of ['rembgSession', 'rembg', 'alpha', 'cutout']) delete workflow[id];
+                    workflow.save.inputs.images = ['decode', 0];
+                    bytes = await comfyRun(s.url, workflow, signal);
+                    chosen = { ...option, rb: null };
+                    keptBackground = true;
+                }
                 break;
             } catch (e) {
                 lastError = e;
                 // Missing loader/cutout nodes can be retried. Missing models, face detection, OOM or other
                 // execution failures cannot be fixed by resubmitting the same job through another loader.
-                if (!rejected(e) && !/node .*does not exist/i.test(e.message)) break;
+                if (retriedWithoutBackground || cutoutFailure(e) || gpuMemoryFailure(e) || (!rejected(e) && !/node .*does not exist/i.test(e.message))) break;
             }
         }
         if (signal?.aborted) break;
         if (!bytes) {
-            const message = `${lastError?.message ?? 'No image returned.'} ${identity === 'faceid'
-                ? 'FaceID Plus v2 needs InsightFace, the matching FaceID model and LoRA, and CLIP Vision. For illustrated faces, try IP-Adapter Plus Face.'
-                : 'Check that ComfyUI IPAdapter Plus, the matching PLUS FACE model and CLIP Vision are installed.'} No different-person fallback was used.`;
+            const message = identityFailureMessage(lastError, identity);
             await onEach(label, { error: message });
             break;
         }
         // A file-save failure must propagate; it is not a successful expression.
         await onEach(label, { bytes, positive: prompts.expressionPositive, seed, method: identity });
         done[label] = bytes;
+        if (keptBackground) warnings.push(`Background removal failed for ${label}. That expression and subsequent expressions keep their backgrounds; the same face reference was used.`);
     }
-    return { seed, sprites: done, transparent: !!chosen?.rb, fromReference: true, method: identity, cancelled: !!signal?.aborted };
+    return { seed, sprites: done, transparent: !!chosen?.rb, fromReference: true, method: identity, warnings, cancelled: !!signal?.aborted };
 }
 
 /**

@@ -140,7 +140,8 @@ beforeEach(() => {
         posted.push({ url, body });
         if (url === '/api/sd/comfy/generate') {
             const wf = JSON.parse(body.prompt).prompt;
-            if (ctx.failure) return { ok: false, status: 500, text: async () => ctx.failure };
+            const failure = typeof ctx.failure === 'function' ? ctx.failure(wf) : ctx.failure;
+            if (failure) return { ok: false, status: 500, text: async () => failure };
             if (ctx.reject?.(wf)) return { ok: false, status: 500, text: async () => 'ComfyUI returned an error.' };
             if (Object.values(wf).some(n => ['RemBGSession+', 'TransparentBGSession+'].includes(n.class_type)) && ctx.noRembg) return { ok: false, status: 500, text: async () => 'Cannot execute because node RemBGSession+ does not exist.' };
             return { ok: true, status: 200, json: async () => ({ format: 'png', data: Buffer.from('PNGDATA').toString('base64') }) };
@@ -415,4 +416,94 @@ test('an adapter model failure stops once and reports setup guidance without unc
 test('expression-save failures propagate instead of being counted as successful generated sprites', async () => {
     const { paintSprites } = await import('../src/st/comfy.js');
     await assert.rejects(paintSprites({ identity: 'plus-face', labels: ['joy'], reference: new Uint8Array([9]), prepare: fakePrepare, onEach: () => { throw new Error('disk full'); } }), /disk full/);
+});
+
+const cutoutFailure = 'ComfyUI generation did not succeed.\n\nImageRemoveBackground+ [rembg] RuntimeError: nvrtc: error: failed to open libnvrtc-builtins.so.13.0.\nMake sure that libnvrtc-builtins.so.13.0 is installed correctly.\nnvrtc compilation failed:';
+
+test('a background-removal runtime failure retries once with the same face reference and keeps backgrounds for the rest', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    ctx.failure = wf => wf.rembg ? cutoutFailure : '';
+    const seen = [];
+    const result = await paintSprites({ identity: 'plus-face', labels: ['disgust', 'anger'], seed: 42,
+        reference: new Uint8Array([9]), prepare: fakePrepare, onEach: (label, r) => seen.push([label, r]) });
+    assert.deepEqual(Object.keys(result.sprites), ['disgust', 'anger']);
+    assert.ok(seen.every(([, r]) => r.bytes && !r.error));
+    assert.equal(result.transparent, false);
+    assert.match(result.warnings.join(' '), /background/i);
+    const graphs = graphsSent();
+    assert.equal(graphs.length, 3, 'one cutout failure, one plain retry, next expression plain');
+    assert.equal(graphs[1].rembg, undefined);
+    assert.equal(graphs[2].rembg, undefined);
+    assert.deepEqual(graphs[1].save.inputs.images, ['decode', 0]);
+    graphs.forEach(linksResolve);
+    assert.deepEqual(graphs[1].identity, graphs[0].identity);
+    assert.deepEqual(graphs[1].ref, graphs[0].ref);
+    assert.deepEqual(graphs[1].express, graphs[0].express);
+    assert.ok(graphs.every(w => !w.sample && w.express.inputs.model[0] === 'identity'));
+});
+
+test('a background remover failing after an earlier successful mood can still recover', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    ctx.failure = wf => graphsSent().length > 1 && wf.rembg ? cutoutFailure : '';
+    const result = await paintSprites({ identity: 'faceid', labels: ['joy', 'disgust', 'anger'],
+        reference: new Uint8Array([9]), prepare: fakePrepare });
+    assert.deepEqual(Object.keys(result.sprites), ['joy', 'disgust', 'anger']);
+    assert.equal(graphsSent().length, 4);
+    assert.ok(graphsSent().every(w => w.identityLoader.inputs.preset === 'FACEID PLUS V2'));
+    assert.equal(graphsSent().at(-1).rembg, undefined);
+});
+
+test('out-of-memory in a cutout or sampler stops once with GPU guidance, not adapter-install advice', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    for (const node of ['ImageRemoveBackground+ [rembg]', 'KSampler [express]']) {
+        posted = [];
+        ctx.failure = `ComfyUI generation did not succeed.\n\n${node} torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2 GiB.`;
+        const seen = [];
+        const result = await paintSprites({ identity: 'plus-face', labels: ['joy', 'anger'],
+            reference: new Uint8Array([9]), prepare: fakePrepare, onEach: (label, r) => seen.push(r) });
+        assert.deepEqual(result.sprites, {});
+        assert.equal(graphsSent().length, 1);
+        assert.match(seen[0].error, /GPU memory/i);
+        assert.doesNotMatch(seen[0].error, /Check that ComfyUI IPAdapter|installed/);
+    }
+});
+
+test('non-cutout CUDA library failures stop without retrying or blaming missing adapter models', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    ctx.failure = cutoutFailure.replace('ImageRemoveBackground+ [rembg]', 'KSampler [express]');
+    const seen = [];
+    await paintSprites({ identity: 'plus-face', labels: ['disgust', 'anger'], reference: new Uint8Array([9]),
+        prepare: fakePrepare, onEach: (label, r) => seen.push(r) });
+    assert.equal(graphsSent().length, 1);
+    assert.match(seen[0].error, /libnvrtc-builtins/);
+    assert.doesNotMatch(seen[0].error, /matching PLUS FACE|CLIP Vision/);
+});
+
+test('failure of the plain retry stops instead of starting another loader or dropping the face adapter', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    for (const failure of ['IPAdapterUnifiedLoader: IPAdapter model not found', 'ComfyUI returned an error.']) {
+        posted = [];
+        ctx.failure = wf => wf.rembg ? cutoutFailure : failure;
+        const seen = [];
+        const result = await paintSprites({ identity: 'plus-face', labels: ['disgust', 'anger'], reference: new Uint8Array([9]),
+            prepare: fakePrepare, onEach: (label, r) => seen.push(r) });
+        assert.deepEqual(result.sprites, {});
+        assert.equal(graphsSent().length, 2);
+        assert.ok(seen[0].error.includes(failure));
+        assert.match(seen[0].error, /No different-person fallback/);
+        assert.ok(graphsSent().every(w => w.identity));
+    }
+});
+
+test('cancelling after a cutout failure does not submit the plain retry or save an expression', async () => {
+    const { paintSprites } = await import('../src/st/comfy.js');
+    const controller = new AbortController();
+    ctx.failure = () => { controller.abort(); return cutoutFailure; };
+    const seen = [];
+    const result = await paintSprites({ identity: 'plus-face', labels: ['disgust'], reference: new Uint8Array([9]),
+        prepare: fakePrepare, signal: controller.signal, onEach: (label, r) => seen.push(r) });
+    assert.equal(result.cancelled, true);
+    assert.deepEqual(result.sprites, {});
+    assert.deepEqual(seen, []);
+    assert.equal(graphsSent().length, 1);
 });
