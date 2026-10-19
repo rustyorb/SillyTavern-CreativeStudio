@@ -313,6 +313,26 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-modal-head h3 { margin: 0; font-size: 1.05em; }
 .cs-modal-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .cs-modal-foot { padding: 8px 10px; border-top: 1px solid var(--cs-line); display: flex; justify-content: flex-end; gap: 6px; position: sticky; bottom: 0; background: var(--cs-panel); }
+.cs-remix-controls { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.cs-remix-controls h4 { margin: 10px 0 0; }
+.cs-remix-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cs-remix-source { padding: 12px; border: 1px solid var(--cs-line); border-radius: 8px; min-width: 0; }
+.cs-remix-source-preview { display: flex; gap: 10px; margin-top: 10px; }
+.cs-remix-source-preview img { width: 56px; height: 72px; object-fit: cover; border-radius: 5px; }
+.cs-remix-source-preview p { font-size: .85em; margin: 0; overflow-wrap: anywhere; max-height: 100px; overflow: auto; }
+.cs-remix-rule { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.cs-remix-rule .cs-num { width: 100%; }
+.cs-remix-locks { padding: 10px; background: var(--cs-panel); border-left: 3px solid var(--cs-accent); border-radius: 4px; }
+.cs-remix-minimum-head, .cs-remix-minimum { display: grid; grid-template-columns: minmax(120px, 1fr) 120px minmax(0, 1fr); align-items: center; gap: 10px; padding: 6px 0; }
+.cs-remix-minimum-head { font-size: .8em; color: var(--cs-dim); }
+.cs-remix-minimum { border-bottom: 1px solid var(--cs-line); font-size: .9em; }
+.cs-remix-minimum .cs-input { width: 100%; }
+@media (max-width: 600px) {
+    .cs-remix-sources, .cs-remix-rule { grid-template-columns: minmax(0, 1fr); }
+    .cs-remix-minimum-head, .cs-remix-minimum { grid-template-columns: minmax(100px, 1fr) 90px; }
+    .cs-remix-minimum > span { grid-column: 1 / -1; }
+    .cs-remix-minimum-head > span:last-child:not(:nth-child(2)) { display: none; }
+}
 
 .cs-toast {
     display: flex; align-items: center; gap: 10px; width: max-content;

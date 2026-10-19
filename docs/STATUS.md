@@ -19,6 +19,20 @@ Deletion follow-up (2026-10-18): 164 unit tests passed. Local Chromium checks at
 
 ## Verification summary
 
+Release 1.2.0 (2026-10-19): 215 unit tests passed. New coverage verifies source preservation and fresh identity,
+local age averaging, missing/ambiguous age handling, word counting, bounded expansion, original greeting
+preservation, cancellation, project-switch protection, one-step Undo, later field requirements, and editable
+dialogue-variation instructions. The local in-app browser showed the actual remix form and calculated 30 + 40
+as age 35. A disposable browser fixture using production UI, prompts, schemas and generation logic with only
+the model simulated verified full-card creation, automatic short-field expansion, unresolved shortfall reporting,
+editable/remembered minimums, Undo, connection errors and cancellation with no late character save. The real
+dialog fit a 390-pixel viewport without horizontal overflow; the viewport was restored. No browser errors were
+logged. No external model or GPU request was made, so model creativity and adherence remain to be tested with
+the user's chosen model. README, quickstart, searchable Help, manifest, package and visible version were updated.
+
+The disposable UI fixture is served at `tests/live/remix-ui.html` inside the extension. It uses an in-memory
+project and simulated model replies; refreshing resets it without touching saved projects.
+
 Expression background-removal follow-up (2026-10-19): 201 unit tests passed. A simulated SillyTavern response matching the reported `ImageRemoveBackground+ [rembg]` / `libnvrtc-builtins.so.13.0` failure reproduced the stop and misleading adapter advice before the fix. The corrected path retries once with only the cutout nodes removed, preserving the sampler, seed, reference image and adapter. The rest of that run keeps backgrounds, and the completion report explains why. Regression checks cover failure after an earlier successful mood, GPU out-of-memory in cutout/sampler nodes, CUDA errors outside cutout nodes, failure of the single retry, cancellation, and both face adapters. External image responses were mocked; no GPU job was launched, and the other instance's CUDA installation was not modified or live-validated.
 
 Portrait recovery follow-up (2026-10-18): 195 unit tests passed. Pictures now shows the current portrait above the generator and automatically repairs missing portrait links using owned media, an explicit SillyTavern avatar filename, or a unique imported-card content match. Tests cover same-name ambiguity, existing portrait preservation, project/character switches, late uploads, request deduplication, Undo, deliberate deletion across reloads, and retry after failure. In the actual local in-app browser, the selected legacy Seraphina import recovered `default_Seraphina.png`; both Pictures entry points showed the saved 400×600 image, and the expression reference used the identical saved image with generation enabled. No AI or GPU generation was needed for this verification.

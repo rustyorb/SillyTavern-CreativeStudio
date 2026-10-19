@@ -11,6 +11,31 @@ Open Creative Studio with the feather in SillyTavern’s top bar, or **Ctrl+Shif
 
 AI generation uses the connection selected in **AI setup** and your provider’s normal usage terms. Importing, editing and exporting do not need an AI connection.
 
+## Remix two characters (1.2.0)
+
+Open **Characters → Remix two characters**, then choose two cards already imported into your project. Studio
+uses both as inspiration for one complete new identity: name, description, personality, scenario, opening and
+example dialogue. It creates a separate character; both originals remain unchanged. Undo removes the new character.
+
+Choose optional rules for age, species and gender. **Average both** calculates age locally and rounds to a whole
+year: 30 and 40 become 35. Source details fill in only when clear; correct the displayed values or choose **Let AI
+choose** if an age is unknown. Use the direction box for other requirements, setting, voice or details to keep.
+
+Each text field has an editable **Minimum words** value (0 disables the minimum, up to 5000 per field). Minimums
+are remembered in this project. Alternate and group-only greeting minimums apply to each greeting. Large requests
+may exceed your model's output limit. **Generate new character** creates the card, counts the words, and tries one
+expansion per short field. If an expansion fails, the completed draft is kept with a visible shortfall report;
+cancelling the operation adds nothing. No portraits or expression jobs run automatically.
+
+The resulting character's **Remix · word counts** panel shows live counts and editable minimums. **Ask AI** on
+its writing fields also carries those minimums and locked facts into later edits. Review the model's prose for
+consistency; automatic age checks catch explicit numeric age conflicts, not every possible semantic contradiction.
+
+Dialogue generation now asks for natural variation within and between both speakers' messages: speech alone,
+action alone, speech/action/more speech, and other scene-driven mixtures without a fixed rotation. Existing
+examples are preserved; use **Voice → Ask AI → Rewrite** to regenerate them with the new guidance. These directions
+can be edited or reset under **AI instructions → Natural, varied example dialogue**.
+
 ## Make the character yours
 
 **Write** holds the name, description, personality and current situation. **Openings** holds the first message and optional alternate starts. **Voice** gives the AI examples of how the character speaks.
