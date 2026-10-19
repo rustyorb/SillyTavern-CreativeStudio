@@ -164,6 +164,17 @@ test('switching the selected character during recovery keeps the portrait with i
     assert.equal(f.store.get().characters[1].avatarMediaId, '');
 });
 
+test('returning to a project after a cancelled recovery starts a fresh automatic attempt', async () => {
+    const f = fixture();
+    f.source.png = async () => { f.store.reset(createProject('Other project')); return png; };
+    assert.equal(await f.load(), null);
+    f.store.reset(f.project);
+    f.source.png = async () => png;
+    const media = await f.load();
+    assert.equal(f.store.get().characters[0].avatarMediaId, media.id);
+    assert.equal(f.saved.length, 1);
+});
+
 test('fetch errors preserve the project and an explicit retry can recover; non-PNG responses are rejected', async () => {
     const f = fixture();
     f.source.png = async () => { throw new Error('HTTP 503'); };

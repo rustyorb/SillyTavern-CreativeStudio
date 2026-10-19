@@ -56,14 +56,18 @@ export function ensureCharacterPortrait(store, env, projectId, characterId, { re
     const key = `${projectId}/${characterId}`;
     const previous = attempts.get(key);
     if (previous && (previous.pending || !retry)) return previous.promise;
-    const request = { pending: true };
-    request.promise = recoverPortrait(store, env, projectId, characterId, source)
-        .finally(() => { request.pending = false; });
+    const request = { pending: true, invalidated: false };
+    const invalidate = () => {
+        request.invalidated = true;
+        if (attempts.get(key) === request) attempts.delete(key);
+    };
+    request.promise = recoverPortrait(store, env, projectId, characterId, source, invalidate)
+        .finally(() => { request.pending = false; if (request.invalidated) invalidate(); });
     attempts.set(key, request);
     return request.promise;
 }
 
-async function recoverPortrait(store, env, projectId, characterId, source) {
+async function recoverPortrait(store, env, projectId, characterId, source, invalidate) {
     const project = store.get();
     const character = findArtifact(project, 'characters', characterId);
     if (project.id !== projectId || !character || character.portraitAutoLoadBlocked) return null;
@@ -73,7 +77,7 @@ async function recoverPortrait(store, env, projectId, characterId, source) {
     const eligible = p => p.id === projectId && p.characters.some(c => c.id === characterId
         && c.avatarMediaId === character.avatarMediaId && !c.portraitAutoLoadBlocked);
     // Remember intervening deletion/project changes even if the user returns before the request finishes.
-    const unsubscribe = store.subscribe(p => { if (!eligible(p)) cancelled = true; });
+    const unsubscribe = store.subscribe(p => { if (!eligible(p)) { cancelled = true; invalidate(); } });
     try {
         let media = linkedPortrait(project, character);
         let saved;
@@ -88,6 +92,8 @@ async function recoverPortrait(store, env, projectId, characterId, source) {
             media = saved.media;
         }
         if (cancelled || !eligible(store.get())) return null;
+        // Our own successful attachment changes avatarMediaId; it must not invalidate the completed attempt.
+        unsubscribe();
         store.update(p => {
             const current = findArtifact(p, 'characters', characterId);
             return upsertArtifact(saved ? saved.apply(p) : p, 'characters', {
