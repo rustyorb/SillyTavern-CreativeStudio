@@ -680,6 +680,15 @@ body.cs-studio-open #top-bar { visibility: hidden; }
 .cs-picture-tile strong { font-size: 13px; overflow-wrap: anywhere; }
 .cs-picture-tile span { font-size: 12px; color: var(--cs-dim); }
 .cs-picture-file { display: grid; place-items: center; font-size: 36px; }
+.cs-picture-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cs-picture-card > .cs-picture-tile { width: 100%; flex: 1; }
+.cs-expression-reference { display: flex; align-items: center; gap: 16px; padding: 12px; border: 1px solid var(--cs-line); border-radius: 8px; }
+.cs-expression-reference img { width: 100px; height: 130px; object-fit: contain; flex-shrink: 0; }
+.cs-expression-reference p { margin: 8px 0; }
+.cs-expression-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cs-expression-card > .cs-sprite { width: 100%; }
+.cs-expression-card .cs-btn { white-space: normal; }
+.cs-expression-error { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cs-picture-context { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; border: 1px solid var(--cs-line); border-left: 3px solid var(--cs-accent); border-radius: 8px; }
 .cs-picture-context > img { width: 46px; height: 58px; object-fit: cover; border-radius: 5px; }
 .cs-picture-context > div:not(.cs-spacer) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -761,3 +770,7 @@ body.cs-studio-open #top-bar { visibility: hidden; }
     .cs-grid { grid-template-columns: minmax(0, 1fr); }
     .cs-projsw-menu { min-width: min(280px, 85vw); }
 }
+.cs-field-context { min-width:0; margin:4px 0; padding:10px 12px; border:1px solid var(--cs-line); border-radius:6px; }
+.cs-field-context legend { padding:0 5px; font-weight:600; font-size:13px; }
+.cs-context-options { display:flex; flex-wrap:wrap; gap:8px 18px; margin-bottom:8px; }
+.cs-context-options .cs-toggle { margin:0; }

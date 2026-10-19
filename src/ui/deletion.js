@@ -1,6 +1,6 @@
 // Project deletions share one confirmation and an undo action tied to that exact edit.
 import { html, useState, Button, Modal } from './kit.js';
-import { artifactName, findArtifact, removeArtifact } from '../core/project.js';
+import { artifactName, findArtifact, removeArtifact, removeMedia, mediaUsage, removeCharacter } from '../core/project.js';
 
 export function deleteWithUndo(store, env, update, label, onUndo) {
     const before = store.get();
@@ -49,4 +49,21 @@ export function DeleteArtifactButton({ store, env, type, item, label = 'Delete',
             ? removeArtifact(p, type, item.id, { summary: `Deleted ${name}` }) : p, `Deleted ${name}`, onRestored);
         if (removed) onDeleted?.();
     }} />`;
+}
+
+export function DeletePictureButton({ store, env, project, media, label = 'Delete picture' }) {
+    const uses = mediaUsage(project, media.id);
+    const names = [...new Set(uses.map(u => u.name))].join(', ');
+    return html`<${DeleteButton} name=${media.name} label=${label}
+        detail=${uses.length ? `This image will be removed wherever it is used in this project (${names}), including any portrait or expression slots.` : 'This image is unused.'}
+        onDelete=${() => deleteWithUndo(store, env, p => p.id === project.id && findArtifact(p, 'media', media.id) ? removeMedia(p, media.id) : p, `Deleted ${media.name}`)} />`;
+}
+
+export function DeleteCharacterButton({ store, env, project, character, onDeleted }) {
+    return html`<${DeleteButton} name=${character.card.data.name} label="Delete character"
+        detail="This removes the entire character and pictures only it uses. To remove one picture, use Delete picture under that image instead."
+        onDelete=${() => {
+            const deleted = deleteWithUndo(store, env, p => p.id === project.id && findArtifact(p, 'characters', character.id) ? removeCharacter(p, character.id) : p, `Deleted character ${character.card.data.name}`);
+            if (deleted) onDeleted?.();
+        }} />`;
 }

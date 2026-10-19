@@ -6,7 +6,7 @@ import { scheduleSettingsBackup } from './studio-settings.js';
 import {
     detectFamily, samplingFor, composePrompt, buildTxt2Img, buildExpression, spritePrompts, adoptWorkflow, sizeFor,
     randomSeed, spriteOptions, referenceSize, CUTOUTS, buildKontextExpression, buildKontextEdit, editInstruction, kontextModel, fluxVae,
-    T5_ENCODERS, referenceLoaderOrder,
+    T5_ENCODERS, referenceLoaderOrder, buildIdentityExpression,
 } from '../core/comfy.js';
 
 export const IMAGE_DEFAULTS = {
@@ -170,7 +170,8 @@ export async function comfyKontext(url) {
  * @param {Uint8Array|null} reference the character's picture, or null to paint a base portrait
  * @param {(label: string, result: { bytes: Uint8Array } | { error: string }) => void|Promise<void>} onEach (awaited, in order)
  */
-export async function paintSprites({ look, labels, rating = '', seed = randomSeed(), reference = null, signal, onEach = () => {}, prepare = prepareReference, findKontext = comfyKontext }) {
+export async function paintSprites({ look, labels, rating = '', seed = randomSeed(), reference = null, identity = null, signal, onEach = () => {}, onStatus = () => {}, prepare = prepareReference, findKontext = comfyKontext }) {
+    if (identity) return paintIdentityExpressions({ look, labels, rating, seed, reference, identity, signal, onEach, onStatus, prepare });
     const ctx = stContext();
     const s = imageSettings(ctx);
     if (s.backend !== 'comfy') throw new Error('Expression sprites need ComfyUI (AI for creation → Images).');
@@ -239,6 +240,59 @@ export async function paintSprites({ look, labels, rating = '', seed = randomSee
     return { seed, sprites: done, transparent: !!chosen?.rb, fromReference: !!ref, via: chosen?.loader ?? null, method: chosen?.method ?? null, faceOnly: chosen?.method === 'face' };
 }
 
+/** A reference-backed set never falls back to an unconditioned face or a fresh person. */
+async function paintIdentityExpressions({ look, labels, rating, seed, reference, identity, signal, onEach, onStatus, prepare }) {
+    const s = imageSettings();
+    if (s.backend !== 'comfy' || !s.url || !s.ckpt) throw new Error('Expressions need ComfyUI and a full SDXL or SD1.5 checkpoint. Open Image settings.');
+    if (!reference) throw new Error('Choose a portrait for this character first. Expressions use that picture as their face reference.');
+    onStatus('Preparing the character’s portrait reference…');
+    const ref = await prepare(reference);
+    const family = familyOf(s);
+    const sampling = samplingFor(s.ckpt, family, { steps: num(s.steps), cfg: num(s.cfg), sampler: s.sampler, scheduler: s.scheduler });
+    const loaders = referenceLoaderOrder(s.referenceLoader?.url === s.url ? s.referenceLoader.node : '');
+    const cutouts = s.transparentSprites ? [...CUTOUTS, null] : [null];
+    const done = {};
+    let chosen = null;
+    let uploaded = '';
+    for (const label of labels) {
+        if (signal?.aborted) break;
+        onStatus(`Generating ${label} with ${identity === 'faceid' ? 'FaceID Plus v2' : 'IP-Adapter Plus Face'}…`);
+        const prompts = spritePrompts({ look, label, family, rating, fromReference: true });
+        const options = chosen ? [chosen] : cutouts.flatMap(rb => loaders.map(loader => ({ rb, loader })));
+        let lastError;
+        let bytes;
+        for (const option of options) {
+            if (signal?.aborted) break;
+            try {
+                const data = option.loader === 'upload'
+                    ? (uploaded ||= await uploadToComfy(s.url, ref.png, `cstudio_ref_${hashBytes(ref.png)}.png`)) : ref.base64;
+                const workflow = buildIdentityExpression({ adapter: identity, ckpt: s.ckpt, ...prompts,
+                    width: ref.width, height: ref.height, seed, ...sampling, reference: { loader: option.loader, data }, removeBackground: option.rb });
+                bytes = await comfyRun(s.url, workflow, signal);
+                chosen = option;
+                break;
+            } catch (e) {
+                lastError = e;
+                // Missing loader/cutout nodes can be retried. Missing models, face detection, OOM or other
+                // execution failures cannot be fixed by resubmitting the same job through another loader.
+                if (!rejected(e) && !/node .*does not exist/i.test(e.message)) break;
+            }
+        }
+        if (signal?.aborted) break;
+        if (!bytes) {
+            const message = `${lastError?.message ?? 'No image returned.'} ${identity === 'faceid'
+                ? 'FaceID Plus v2 needs InsightFace, the matching FaceID model and LoRA, and CLIP Vision. For illustrated faces, try IP-Adapter Plus Face.'
+                : 'Check that ComfyUI IPAdapter Plus, the matching PLUS FACE model and CLIP Vision are installed.'} No different-person fallback was used.`;
+            await onEach(label, { error: message });
+            break;
+        }
+        // A file-save failure must propagate; it is not a successful expression.
+        await onEach(label, { bytes, positive: prompts.expressionPositive, seed, method: identity });
+        done[label] = bytes;
+    }
+    return { seed, sprites: done, transparent: !!chosen?.rb, fromReference: true, method: identity, cancelled: !!signal?.aborted };
+}
+
 /**
  * A new picture of the character made from their own picture by FLUX Kontext: a full-body shot, a new portrait,
  * a scene in the same art style. Returns null when the server has no Kontext model (the caller paints from words).
@@ -247,7 +301,7 @@ export async function paintSprites({ look, labels, rating = '', seed = randomSee
 export async function paintFromPicture({ reference, instruction, canvas = null, seed = randomSeed(), signal, prepare = prepareReference, findKontext = comfyKontext }) {
     const ctx = stContext();
     const s = imageSettings(ctx);
-    if (s.backend !== 'comfy' || s.spriteMethod === 'face' || s.spriteMethod === 'whole') return null;
+    if (s.backend !== 'comfy') return null;
     const kontext = await findKontext(s.url).catch(() => null);
     if (!kontext) return null;
     const ref = await prepare(reference);

@@ -24,13 +24,25 @@ Beside a text field, **Ask AI** opens a place for your directions:
 - **Rewrite** replaces it with a revised version.
 - **3 takes** gives you versions to compare.
 
+**Use earlier fields** lets you choose the context for that field, with every box checked initially. Personality
+gets Name and Description; Scenario adds Personality; later fields build on the preceding writing fields in the
+same way. Your direction and the current field's text are always included. Uncheck anything you do not want used.
+These choices are remembered separately for each field and character.
+
+For an accent, spoken quirk or specific dialogue rule, open **Voice** and fill **Voice direction — highest priority**.
+It leads over other voice/style instructions for AI-written dialogue and openings. The AI controls and context
+boxes work in both **Structured** and **Raw text**. For example: “Clipped London accent; questions end in ‘yeah?’;
+keep slang light.” This is writing guidance, not a text-to-speech setting.
+
 The top bar tells you whether AI edits apply directly or wait for review. You can undo project changes with **Ctrl+Z** outside text fields. **Advanced tools → AI instructions** lets you inspect, change and reset the writing instructions.
 
 ## Add a portrait and world details
 
 Open a character, then **Pictures**. Both the character tab and the main Pictures button stay with that character. Choose a picture type, write a **Picture prompt**, then press **Generate picture**. **Help write prompt** can draft the words from the character card; you can edit them before generating. Each character keeps its own prompt draft. **Image settings** opens the generator setup directly.
 
-To use an existing picture, choose **Upload portrait…**. Replacing it keeps previous pictures in the character’s gallery. The portrait travels with the exported card. Expand **Expression sprites** to generate moods through ComfyUI.
+To use an existing picture, choose **Upload portrait…**. Replacing it keeps previous pictures in the character’s gallery. The portrait travels with the exported card. Each image has **Delete picture**, followed by confirmation and Undo. **Delete character** removes the whole character instead.
+
+For expressions, follow the three steps in **Expressions — same character, different moods**: check the reference portrait, choose **IP-Adapter Plus Face** for illustrations or **FaceID Plus v2** for photographic faces, and **Generate one expression**. If the face looks right, generate the missing moods. These require ComfyUI and the adapter models listed in the README. Generation never switches to a new person if the adapter fails. **Install in SillyTavern** uploads the results; enable SillyTavern's Character Expressions extension to display them in chat. **Delete expression** removes an unwanted mood from the project.
 
 **Pictures → Project picture library** collects all project pictures. Search by picture or character name, filter expressions or unused pictures, and open a picture to see its uses or remove it. Removal is undoable. Returning to Pictures keeps your working character selected.
 
